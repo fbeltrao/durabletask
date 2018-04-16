@@ -13,6 +13,7 @@
 
 namespace DurableTask.Core
 {
+    using Newtonsoft.Json;
     using System;
     using System.Collections.Generic;
     using System.Runtime.Serialization;
@@ -26,76 +27,91 @@ namespace DurableTask.Core
         /// <summary>
         /// Completion datetime of the orchestration
         /// </summary>
+        [JsonProperty("completedTime")]
         [DataMember] public DateTime CompletedTime;
 
         /// <summary>
         /// The size of the compressed serialized runtimestate
         /// </summary>
+        [JsonProperty("compressedSize")]
         [DataMember] public long CompressedSize;
 
         /// <summary>
         /// Creation time of the orchestration
         /// </summary>
+        [JsonProperty("createdTime")]
         [DataMember] public DateTime CreatedTime;
 
         /// <summary>
         /// Serialized input of the orchestration
         /// </summary>
+        [JsonProperty("input")]
         [DataMember] public string Input;
 
         /// <summary>
         /// Last updated time of the orchestration
         /// </summary>
+        [JsonProperty("lastUpdatedTime")]
         [DataMember] public DateTime LastUpdatedTime;
 
         /// <summary>
         /// The orchestration name
         /// </summary>
+        [JsonProperty("name")]
         [DataMember] public string Name;
 
         /// <summary>
         /// The orchestration instance this state represents
         /// </summary>
+        [JsonProperty("orchestrationInstance")]
         [DataMember] public OrchestrationInstance OrchestrationInstance;
 
         /// <summary>
         /// The current orchestration status
         /// </summary>
+        [JsonProperty("orchestrationStatus")]
         [DataMember] public OrchestrationStatus OrchestrationStatus;
 
         /// <summary>
         /// The serialized output of the orchestration
         /// </summary>
+        [JsonProperty("output")]
         [DataMember] public string Output;
 
         /// <summary>
         /// The parent instance if this is orchestration has one
         /// </summary>
+        [JsonProperty("parentInstance")]
         [DataMember] public ParentInstance ParentInstance;
 
         /// <summary>
         /// The size of the raw (uncompressed) serialized runtimestate
         /// </summary>
+        [JsonProperty("size")]
         [DataMember] public long Size;
 
         /// <summary>
         /// String status of the orchestration
         /// </summary>
+        [JsonProperty("status")]
         [DataMember] public string Status;
 
         /// <summary>
         /// The dictionary of tags and string values associated with this orchestration
         /// </summary>
+        [JsonProperty("tags")]
         [DataMember] public IDictionary<string, string> Tags;
 
         /// <summary>
         /// The orchestration version
         /// </summary>
+        [JsonProperty("version")]
         [DataMember] public string Version;
 
         /// <summary>
         /// Implementation for <see cref="IExtensibleDataObject.ExtensionData"/>.
         /// </summary>
+        [JsonProperty("extensionData")]
         public ExtensionDataObject ExtensionData { get; set; }
     }
 }
