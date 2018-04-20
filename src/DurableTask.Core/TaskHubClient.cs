@@ -345,7 +345,7 @@ namespace DurableTask.Core
                 OrchestrationInstance = orchestrationInstance
             };
 
-            var taskMessages = new List<TaskMessage>
+            var taskMessages = new List<ITaskMessage>
             {
                 new TaskMessage
                 {

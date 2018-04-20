@@ -450,8 +450,8 @@ namespace DurableTask.ServiceBus
 
             ServiceBusUtils.CheckAndLogDeliveryCount(session.SessionId, newMessages, this.Settings.MaxTaskOrchestrationDeliveryCount);
 
-            IList<TaskMessage> newTaskMessages = await Task.WhenAll(
-                newMessages.Select(async message => await ServiceBusUtils.GetObjectFromBrokeredMessageAsync<TaskMessage>(message, this.BlobStore)));
+            IList<ITaskMessage> newTaskMessages = await Task.WhenAll(
+                newMessages.Select(async message => await ServiceBusUtils.GetObjectFromBrokeredMessageAsync<ITaskMessage>(message, this.BlobStore)));
 
             OrchestrationRuntimeState runtimeState = await GetSessionStateAsync(session, this.BlobStore);
 
@@ -474,7 +474,7 @@ namespace DurableTask.ServiceBus
 
             if (this.InstanceStore != null)
             {
-                TaskMessage executionStartedMessage = newTaskMessages.FirstOrDefault(m => m.Event is ExecutionStartedEvent);
+                var executionStartedMessage = newTaskMessages.FirstOrDefault(m => m.Event is ExecutionStartedEvent);
 
                 if (executionStartedMessage != null)
                 {
@@ -570,10 +570,10 @@ namespace DurableTask.ServiceBus
         public async Task CompleteTaskOrchestrationWorkItemAsync(
             TaskOrchestrationWorkItem workItem,
             OrchestrationRuntimeState newOrchestrationRuntimeState,
-            IList<TaskMessage> outboundMessages,
-            IList<TaskMessage> orchestratorMessages,
-            IList<TaskMessage> timerMessages,
-            TaskMessage continuedAsNewMessage,
+            IList<ITaskMessage> outboundMessages,
+            IList<ITaskMessage> orchestratorMessages,
+            IList<ITaskMessage> timerMessages,
+            ITaskMessage continuedAsNewMessage,
             OrchestrationState orchestrationState)
         {
             var runtimeState = workItem.OrchestrationRuntimeState;
@@ -803,7 +803,7 @@ namespace DurableTask.ServiceBus
                 receivedMessage.SessionId,
                 GetFormattedLog($"New message to process: {receivedMessage.MessageId} [{receivedMessage.SequenceNumber}], latency: {receivedMessage.DeliveryLatency()}ms"));
 
-            TaskMessage taskMessage = await ServiceBusUtils.GetObjectFromBrokeredMessageAsync<TaskMessage>(receivedMessage, this.BlobStore);
+            var taskMessage = await ServiceBusUtils.GetObjectFromBrokeredMessageAsync<ITaskMessage>(receivedMessage, this.BlobStore);
 
             ServiceBusUtils.CheckAndLogDeliveryCount(receivedMessage, Settings.MaxTaskActivityDeliveryCount);
 
@@ -868,7 +868,7 @@ namespace DurableTask.ServiceBus
         /// </summary>
         /// <param name="workItem">Work item to complete</param>
         /// <param name="responseMessage">The response message to send</param>
-        public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage)
+        public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, ITaskMessage responseMessage)
         {
             BrokeredMessage brokeredResponseMessage = await ServiceBusUtils.GetBrokeredMessageFromObjectAsync(
                 responseMessage,
@@ -933,7 +933,7 @@ namespace DurableTask.ServiceBus
         ///    Create/start a new Orchestration
         /// </summary>
         /// <param name="creationMessage">The task message for the new Orchestration</param>
-        public async Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
+        public async Task CreateTaskOrchestrationAsync(ITaskMessage creationMessage)
         {
             // First, lets push the orchestration state (Pending) into JumpStart table
             bool jumpStartEnabled = false;
@@ -967,7 +967,7 @@ namespace DurableTask.ServiceBus
         /// Writes an execution started event to the jump start table in the instance store
         /// </summary>
         /// <param name="creationMessage">Orchestration started message</param>
-        public async Task UpdateJumpStartStoreAsync(TaskMessage creationMessage)
+        public async Task UpdateJumpStartStoreAsync(ITaskMessage creationMessage)
         {
             var executionStartedEvent = creationMessage.Event as ExecutionStartedEvent;
             var createTime = DateTime.UtcNow;
@@ -997,7 +997,7 @@ namespace DurableTask.ServiceBus
         ///    Sends an orchestration message
         /// </summary>
         /// <param name="message">The task message to be sent for the orchestration</param>
-        public Task SendTaskOrchestrationMessageAsync(TaskMessage message)
+        public Task SendTaskOrchestrationMessageAsync(ITaskMessage message)
         {
             return SendTaskOrchestrationMessageBatchAsync(message);
         }
@@ -1006,7 +1006,7 @@ namespace DurableTask.ServiceBus
         ///    Sends a set of orchestration messages
         /// </summary>
         /// <param name="messages">The task messages to be sent for the orchestration</param>
-        public async Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages)
+        public async Task SendTaskOrchestrationMessageBatchAsync(params ITaskMessage[] messages)
         {
             if (messages.Length == 0)
             {
@@ -1026,7 +1026,7 @@ namespace DurableTask.ServiceBus
             await sender.CloseAsync().ConfigureAwait(false);
         }
 
-        async Task<BrokeredMessage> GetBrokeredMessageAsync(TaskMessage message)
+        async Task<BrokeredMessage> GetBrokeredMessageAsync(ITaskMessage message)
         {
             var brokeredMessage = await ServiceBusUtils.GetBrokeredMessageFromObjectAsync(
                 message,
@@ -1207,8 +1207,8 @@ namespace DurableTask.ServiceBus
 
             ServiceBusUtils.CheckAndLogDeliveryCount(newMessages, Settings.MaxTrackingDeliveryCount);
 
-            IList<TaskMessage> newTaskMessages = await Task.WhenAll(
-                newMessages.Select(async message => await ServiceBusUtils.GetObjectFromBrokeredMessageAsync<TaskMessage>(message, this.BlobStore)));
+            IList<ITaskMessage> newTaskMessages = await Task.WhenAll(
+                newMessages.Select(async message => await ServiceBusUtils.GetObjectFromBrokeredMessageAsync<ITaskMessage>(message, this.BlobStore)));
 
             var lockTokens = newMessages.ToDictionary(m => m.LockToken, m => m);
             var sessionState = new ServiceBusOrchestrationSession
@@ -1303,7 +1303,7 @@ namespace DurableTask.ServiceBus
             var historyEntities = new List<OrchestrationWorkItemInstanceEntity>();
             var stateEntities = new List<OrchestrationStateInstanceEntity>();
 
-            foreach (TaskMessage taskMessage in workItem.NewMessages)
+            foreach (var taskMessage in workItem.NewMessages)
             {
                 if (taskMessage.Event.EventType == EventType.HistoryState)
                 {
@@ -1612,9 +1612,9 @@ namespace DurableTask.ServiceBus
         internal class MessageContainer
         {
             internal BrokeredMessage Message { get; set; }
-            internal TaskMessage Action { get; set; }
+            internal ITaskMessage Action { get; set; }
 
-            internal MessageContainer(BrokeredMessage message, TaskMessage action)
+            internal MessageContainer(BrokeredMessage message, ITaskMessage action)
             {
                 this.Message = message;
                 this.Action = action;

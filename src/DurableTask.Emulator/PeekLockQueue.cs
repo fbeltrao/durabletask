@@ -22,19 +22,19 @@ namespace DurableTask.Emulator
 
     internal class PeeklockQueue
     {
-        List<TaskMessage> messages;
-        HashSet<TaskMessage> lockTable;
+        List<ITaskMessage> messages;
+        HashSet<ITaskMessage> lockTable;
 
         readonly object thisLock = new object();
 
 
         public PeeklockQueue()
         {
-            this.messages = new List<TaskMessage>();
-            this.lockTable = new HashSet<TaskMessage>();
+            this.messages = new List<ITaskMessage>();
+            this.lockTable = new HashSet<ITaskMessage>();
         }
 
-        public async Task<TaskMessage> ReceiveMessageAsync(TimeSpan receiveTimeout, CancellationToken cancellationToken)
+        public async Task<ITaskMessage> ReceiveMessageAsync(TimeSpan receiveTimeout, CancellationToken cancellationToken)
         {
             Stopwatch timer = Stopwatch.StartNew();
             while (timer.Elapsed < receiveTimeout && !cancellationToken.IsCancellationRequested)
@@ -62,7 +62,7 @@ namespace DurableTask.Emulator
             return null;
         }
 
-        public void SendMessageAsync(TaskMessage message)
+        public void SendMessageAsync(ITaskMessage message)
         {
             lock(this.thisLock)
             {
@@ -70,7 +70,7 @@ namespace DurableTask.Emulator
             }
         }
 
-        public void CompleteMessageAsync(TaskMessage message)
+        public void CompleteMessageAsync(ITaskMessage message)
         {
             lock(this.thisLock)
             {
@@ -84,7 +84,7 @@ namespace DurableTask.Emulator
             }
         }
 
-        public void AbandonMessageAsync(TaskMessage message)
+        public void AbandonMessageAsync(ITaskMessage message)
         {
             lock (this.thisLock)
             {

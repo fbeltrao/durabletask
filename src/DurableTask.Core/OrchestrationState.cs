@@ -14,8 +14,10 @@
 namespace DurableTask.Core
 {
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Converters;
     using System;
     using System.Collections.Generic;
+    using System.ComponentModel;
     using System.Runtime.Serialization;
 
     /// <summary>
@@ -70,6 +72,7 @@ namespace DurableTask.Core
         /// The current orchestration status
         /// </summary>
         [JsonProperty("orchestrationStatus")]
+        [JsonConverter(typeof(StringEnumConverter))]
         [DataMember] public OrchestrationStatus OrchestrationStatus;
 
         /// <summary>
@@ -81,7 +84,7 @@ namespace DurableTask.Core
         /// <summary>
         /// The parent instance if this is orchestration has one
         /// </summary>
-        [JsonProperty("parentInstance")]
+        [JsonProperty("parentInstance", DefaultValueHandling = DefaultValueHandling.Ignore)]
         [DataMember] public ParentInstance ParentInstance;
 
         /// <summary>
@@ -93,25 +96,26 @@ namespace DurableTask.Core
         /// <summary>
         /// String status of the orchestration
         /// </summary>
-        [JsonProperty("status")]
+        [JsonProperty("status", DefaultValueHandling = DefaultValueHandling.Ignore)]
         [DataMember] public string Status;
 
         /// <summary>
         /// The dictionary of tags and string values associated with this orchestration
         /// </summary>
-        [JsonProperty("tags")]
+        [JsonProperty("tags", DefaultValueHandling = DefaultValueHandling.Ignore)]
         [DataMember] public IDictionary<string, string> Tags;
 
         /// <summary>
         /// The orchestration version
         /// </summary>
-        [JsonProperty("version")]
+        [DefaultValue("")]
+        [JsonProperty("version", DefaultValueHandling = DefaultValueHandling.Ignore)]
         [DataMember] public string Version;
 
         /// <summary>
         /// Implementation for <see cref="IExtensibleDataObject.ExtensionData"/>.
         /// </summary>
-        [JsonProperty("extensionData")]
+        [JsonProperty("extensionData", DefaultValueHandling = DefaultValueHandling.Ignore)]
         public ExtensionDataObject ExtensionData { get; set; }
     }
 }

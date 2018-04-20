@@ -113,10 +113,10 @@ namespace DurableTask.Core
         Task CompleteTaskOrchestrationWorkItemAsync(
             TaskOrchestrationWorkItem workItem,
             OrchestrationRuntimeState newOrchestrationRuntimeState, 
-            IList<TaskMessage> outboundMessages, 
-            IList<TaskMessage> orchestratorMessages, 
-            IList<TaskMessage> timerMessages,
-            TaskMessage continuedAsNewMessage,
+            IList<ITaskMessage> outboundMessages, 
+            IList<ITaskMessage> orchestratorMessages, 
+            IList<ITaskMessage> timerMessages,
+            ITaskMessage continuedAsNewMessage,
             OrchestrationState orchestrationState);
 
         /// <summary>
@@ -154,7 +154,7 @@ namespace DurableTask.Core
         /// <summary>
         ///    Atomically complete a work item and send the response messages
         /// </summary>
-        Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage);
+        Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, ITaskMessage responseMessage);
 
         /// <summary>
         ///    Abandons a single work item and releases the lock on it

@@ -842,10 +842,10 @@ namespace DurableTask.AzureStorage
         public async Task CompleteTaskOrchestrationWorkItemAsync(
             TaskOrchestrationWorkItem workItem,
             OrchestrationRuntimeState newOrchestrationRuntimeState,
-            IList<TaskMessage> outboundMessages,
-            IList<TaskMessage> orchestratorMessages,
-            IList<TaskMessage> timerMessages,
-            TaskMessage continuedAsNewMessage,
+            IList<ITaskMessage> outboundMessages,
+            IList<ITaskMessage> orchestratorMessages,
+            IList<ITaskMessage> timerMessages,
+            ITaskMessage continuedAsNewMessage,
             OrchestrationState orchestrationState)
         {
             ReceivedMessageContext context;
@@ -1000,7 +1000,7 @@ namespace DurableTask.AzureStorage
                 totalMessageCount += orchestratorMessages.Count;
                 addedControlMessages = true;
 
-                foreach (TaskMessage taskMessage in orchestratorMessages)
+                foreach (var taskMessage in orchestratorMessages)
                 {
                     string targetInstanceId = taskMessage.OrchestrationInstance.InstanceId;
                     CloudQueue targetControlQueue = await this.GetControlQueueAsync(targetInstanceId);
@@ -1019,7 +1019,7 @@ namespace DurableTask.AzureStorage
                 totalMessageCount += timerMessages.Count; 
                 addedControlMessages = true;
 
-                foreach (TaskMessage taskMessage in timerMessages)
+                foreach (var taskMessage in timerMessages)
                 {
                     DateTime messageFireTime = ((TimerFiredEvent)taskMessage.Event).FireAt;
                     TimeSpan initialVisibilityDelay = messageFireTime.Subtract(DateTime.UtcNow);
@@ -1042,7 +1042,7 @@ namespace DurableTask.AzureStorage
             {
                 totalMessageCount += outboundMessages.Count;
                 addedWorkItemMessages = true;
-                foreach (TaskMessage taskMessage in outboundMessages)
+                foreach (var taskMessage in outboundMessages)
                 {
                     enqueueTasks.Add(this.workItemQueue.AddMessageAsync(
                         context.CreateOutboundQueueMessage(taskMessage, this.workItemQueue.Name),
@@ -1091,7 +1091,7 @@ namespace DurableTask.AzureStorage
             for (int i = 0; i < context.MessageDataBatch.Count; i++)
             {
                 CloudQueueMessage queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
-                TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
+                var taskMessage = context.MessageDataBatch[i].TaskMessage;
                 AnalyticsEventSource.Log.DeletingMessage(
                     this.storageAccountName,
                     this.settings.TaskHubName,
@@ -1181,7 +1181,7 @@ namespace DurableTask.AzureStorage
             for (int i = 0; i < context.MessageDataBatch.Count; i++)
             {
                 CloudQueueMessage queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
-                TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
+                var taskMessage = context.MessageDataBatch[i].TaskMessage;
 
                 AnalyticsEventSource.Log.AbandoningMessage(
                     this.storageAccountName,
@@ -1287,7 +1287,7 @@ namespace DurableTask.AzureStorage
         }
 
         /// <inheritdoc />
-        public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseTaskMessage)
+        public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, ITaskMessage responseTaskMessage)
         {
             ReceivedMessageContext context;
             if (!ReceivedMessageContext.TryRestoreContext(workItem.Id, out context))
@@ -1500,7 +1500,7 @@ namespace DurableTask.AzureStorage
         /// Creates and starts a new orchestration.
         /// </summary>
         /// <param name="creationMessage">The message which creates and starts the orchestration.</param>
-        public Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
+        public Task CreateTaskOrchestrationAsync(ITaskMessage creationMessage)
         {
             return this.SendTaskOrchestrationMessageAsync(creationMessage);
         }
@@ -1512,7 +1512,7 @@ namespace DurableTask.AzureStorage
         /// Azure Storage does not support batch sending to queues, so there are no transactional guarantees in this method.
         /// </remarks>
         /// <param name="messages">The list of messages to send.</param>
-        public Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages)
+        public Task SendTaskOrchestrationMessageBatchAsync(params ITaskMessage[] messages)
         {
             return Task.WhenAll(messages.Select(msg => this.SendTaskOrchestrationMessageAsync(msg)));
         }
@@ -1521,7 +1521,7 @@ namespace DurableTask.AzureStorage
         /// Sends a message to an orchestration.
         /// </summary>
         /// <param name="message">The message to send.</param>
-        public async Task SendTaskOrchestrationMessageAsync(TaskMessage message)
+        public async Task SendTaskOrchestrationMessageAsync(ITaskMessage message)
         {
             // Client operations will auto-create the task hub if it doesn't already exist.
             await this.EnsuredCreatedIfNotExistsAsync();
@@ -1564,7 +1564,7 @@ namespace DurableTask.AzureStorage
                 stopwatch.ElapsedMilliseconds);
         }
 
-        async Task SendTaskOrchestrationMessageInternalAsync(CloudQueue controlQueue, TaskMessage message)
+        async Task SendTaskOrchestrationMessageInternalAsync(CloudQueue controlQueue, ITaskMessage message)
         {
             await controlQueue.AddMessageAsync(
                 ReceivedMessageContext.CreateOutboundQueueMessageInternal(

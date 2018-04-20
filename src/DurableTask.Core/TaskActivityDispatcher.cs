@@ -90,7 +90,7 @@ namespace DurableTask.Core
 
             try
             {
-                TaskMessage taskMessage = workItem.TaskMessage;
+                var taskMessage = workItem.TaskMessage;
                 OrchestrationInstance orchestrationInstance = taskMessage.OrchestrationInstance;
                 if (string.IsNullOrWhiteSpace(orchestrationInstance?.InstanceId))
                 {

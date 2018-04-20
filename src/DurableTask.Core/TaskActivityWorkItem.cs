@@ -33,6 +33,6 @@ namespace DurableTask.Core
         /// <summary>
         /// The task message associated with this work item
         /// </summary>
-        public TaskMessage TaskMessage;
+        public ITaskMessage TaskMessage;
     }
 }

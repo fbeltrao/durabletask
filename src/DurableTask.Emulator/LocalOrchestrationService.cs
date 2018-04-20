@@ -30,7 +30,7 @@ namespace DurableTask.Emulator
     public class LocalOrchestrationService : IOrchestrationService, IOrchestrationServiceClient, IDisposable
     {
         Dictionary<string, byte[]> sessionState;
-        List<TaskMessage> timerMessages;
+        List<ITaskMessage> timerMessages;
 
         int MaxConcurrentWorkItems = 20;
 
@@ -61,7 +61,7 @@ namespace DurableTask.Emulator
 
             this.sessionState = new Dictionary<string, byte[]>();
 
-            this.timerMessages = new List<TaskMessage>();
+            this.timerMessages = new List<ITaskMessage>();
             this.instanceStore = new Dictionary<string, Dictionary<string, OrchestrationState>>();
             this.orchestrationWaiters = new ConcurrentDictionary<string, TaskCompletionSource<OrchestrationState>>();
             this.cancellationTokenSource = new CancellationTokenSource();
@@ -73,7 +73,7 @@ namespace DurableTask.Emulator
             {
                 lock (this.timerLock)
                 {
-                    foreach (TaskMessage tm in this.timerMessages.ToList())
+                    foreach (var tm in this.timerMessages.ToList())
                     {
                         TimerFiredEvent te = tm.Event as TimerFiredEvent;
 
@@ -160,7 +160,7 @@ namespace DurableTask.Emulator
         // client methods
         /******************************/
         /// <inheritdoc />
-        public Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
+        public Task CreateTaskOrchestrationAsync(ITaskMessage creationMessage)
         {
             ExecutionStartedEvent ee = creationMessage.Event as ExecutionStartedEvent;
 
@@ -202,13 +202,13 @@ namespace DurableTask.Emulator
         }
 
         /// <inheritdoc />
-        public Task SendTaskOrchestrationMessageAsync(TaskMessage message)
+        public Task SendTaskOrchestrationMessageAsync(ITaskMessage message)
         {
             return SendTaskOrchestrationMessageBatchAsync(message);
         }
 
         /// <inheritdoc />
-        public Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages)
+        public Task SendTaskOrchestrationMessageBatchAsync(params ITaskMessage[] messages)
         {
             foreach (var message in messages)
             {
@@ -388,10 +388,10 @@ namespace DurableTask.Emulator
         public Task CompleteTaskOrchestrationWorkItemAsync(
             TaskOrchestrationWorkItem workItem,
             OrchestrationRuntimeState newOrchestrationRuntimeState,
-            IList<TaskMessage> outboundMessages,
-            IList<TaskMessage> orchestratorMessages,
-            IList<TaskMessage> workItemTimerMessages,
-            TaskMessage continuedAsNewMessage,
+            IList<ITaskMessage> outboundMessages,
+            IList<ITaskMessage> orchestratorMessages,
+            IList<ITaskMessage> workItemTimerMessages,
+            ITaskMessage continuedAsNewMessage,
             OrchestrationState state)
         {
             lock (this.thisLock)
@@ -406,7 +406,7 @@ namespace DurableTask.Emulator
 
                 if (outboundMessages != null)
                 {
-                    foreach (TaskMessage m in outboundMessages)
+                    foreach (var m in outboundMessages)
                     {
                         // AFFANDAR : TODO : make async
                         this.workerQueue.SendMessageAsync(m);
@@ -417,7 +417,7 @@ namespace DurableTask.Emulator
                 {
                     lock (this.timerLock)
                     {
-                        foreach (TaskMessage m in workItemTimerMessages)
+                        foreach (var m in workItemTimerMessages)
                         {
                             this.timerMessages.Add(m);
                         }
@@ -542,7 +542,7 @@ namespace DurableTask.Emulator
         /// <inheritdoc />
         public async Task<TaskActivityWorkItem> LockNextTaskActivityWorkItem(TimeSpan receiveTimeout, CancellationToken cancellationToken)
         {
-            TaskMessage taskMessage = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
+            var taskMessage = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, this.cancellationTokenSource.Token).Token);
 
             if (taskMessage == null)
@@ -566,7 +566,7 @@ namespace DurableTask.Emulator
         }
 
         /// <inheritdoc />
-        public Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage)
+        public Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, ITaskMessage responseMessage)
         {
             lock (this.thisLock)
             {

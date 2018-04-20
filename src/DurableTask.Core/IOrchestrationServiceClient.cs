@@ -28,21 +28,21 @@ namespace DurableTask.Core
         /// </summary>
         /// <param name="creationMessage">Orchestration creation message</param>
         /// <returns></returns>
-        Task CreateTaskOrchestrationAsync(TaskMessage creationMessage);
+        Task CreateTaskOrchestrationAsync(ITaskMessage creationMessage);
 
         /// <summary>
         /// Send a new message for an orchestration
         /// </summary>
         /// <param name="message">Message to send</param>
         /// <returns></returns>
-        Task SendTaskOrchestrationMessageAsync(TaskMessage message);
+        Task SendTaskOrchestrationMessageAsync(ITaskMessage message);
 
         /// <summary>
         /// Send a new set of messages for an orchestration
         /// </summary>
         /// <param name="messages">Messages to send</param>
         /// <returns></returns>
-        Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages);
+        Task SendTaskOrchestrationMessageBatchAsync(params ITaskMessage[] messages);
 
         /// <summary>
         /// Wait for an orchestration to reach any terminal state within the given timeout

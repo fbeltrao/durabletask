@@ -20,14 +20,14 @@ namespace DurableTask.Emulator
     {
         public string Id;
         public byte[] SessionState;
-        public List<TaskMessage> Messages;
-        public HashSet<TaskMessage> LockTable;
+        public List<ITaskMessage> Messages;
+        public HashSet<ITaskMessage> LockTable;
 
         public TaskSession()
         {
             this.SessionState = null;
-            this.Messages = new List<TaskMessage>();
-            this.LockTable = new HashSet<TaskMessage>();
+            this.Messages = new List<ITaskMessage>();
+            this.LockTable = new HashSet<ITaskMessage>();
         }
     }
 }

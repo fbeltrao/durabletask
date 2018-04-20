@@ -13,6 +13,7 @@
 
 namespace DurableTask.CosmosDB
 {
+    using CosmosDBQueue;
     using DurableTask.Core;
     using DurableTask.Core.History;
     using Microsoft.Azure.Documents;
@@ -33,7 +34,7 @@ namespace DurableTask.CosmosDB
     {
 
         Dictionary<string, byte[]> sessionState;
-        List<TaskMessage> timerMessages;
+        List<ITaskMessage> timerMessages;
         const string DatabaseName = "durabletask";
         private readonly string historyCollectionName;
         private readonly string instancesCollectionName;
@@ -46,7 +47,8 @@ namespace DurableTask.CosmosDB
         //Dictionary<string, Dictionary<string, OrchestrationState>> instanceStore;
 
         PeekLockSessionQueue orchestratorQueue;
-        PeeklockQueue workerQueue;
+        //PeeklockQueue workerQueue;
+        CosmosDBQueueConsumerAndProducer workerQueue;
 
         CancellationTokenSource cancellationTokenSource;
 
@@ -65,11 +67,12 @@ namespace DurableTask.CosmosDB
         public CosmosDBOrchestrationService(CosmosDBOrchestrationServiceSettings settings)
         {
             this.orchestratorQueue = new PeekLockSessionQueue();
-            this.workerQueue = new PeeklockQueue();
+            //this.workerQueue = new PeeklockQueue();
+            this.workerQueue = new CosmosDBQueueConsumerAndProducer();           
 
             this.sessionState = new Dictionary<string, byte[]>();
 
-            this.timerMessages = new List<TaskMessage>();
+            this.timerMessages = new List<ITaskMessage>();
 
             // Do not use an instance store for now, just implement the required methods
             //this.instanceStore = new Dictionary<string, Dictionary<string, OrchestrationState>>();
@@ -97,7 +100,7 @@ namespace DurableTask.CosmosDB
                 await this.timerLock.WaitAsync();
                 try
                 {
-                    foreach (TaskMessage tm in this.timerMessages.ToList())
+                    foreach (var tm in this.timerMessages.ToList())
                     {
                         TimerFiredEvent te = tm.Event as TimerFiredEvent;
 
@@ -170,7 +173,28 @@ namespace DurableTask.CosmosDB
             await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 historyCollection,
-                new RequestOptions { OfferThroughput = 10000 });            
+                new RequestOptions { OfferThroughput = 10000 });
+
+
+            var queueCollectionDefinition = new CosmosDBCollectionDefinition
+            {
+                CollectionName = "queue",
+                DbName = DatabaseName,
+                Endpoint = this.cosmosDBEndpoint,
+                SecretKey = this.cosmosDBAuthKey,
+                Throughput = 400,
+            };
+
+            var leaseCollectionDefinition = new CosmosDBCollectionDefinition
+            {
+                CollectionName = "lease",
+                DbName = DatabaseName,
+                Endpoint = this.cosmosDBEndpoint,
+                SecretKey = this.cosmosDBAuthKey,
+                Throughput = 400,
+            };
+
+            await this.workerQueue.Initialize(queueCollectionDefinition, leaseCollectionDefinition);
         }
 
         /// <inheritdoc />
@@ -221,7 +245,7 @@ namespace DurableTask.CosmosDB
         // client methods
         /******************************/
         /// <inheritdoc />
-        public async Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
+        public async Task CreateTaskOrchestrationAsync(ITaskMessage creationMessage)
         {
             ExecutionStartedEvent ee = creationMessage.Event as ExecutionStartedEvent;
 
@@ -271,13 +295,13 @@ namespace DurableTask.CosmosDB
         }
 
         /// <inheritdoc />
-        public Task SendTaskOrchestrationMessageAsync(TaskMessage message)
+        public Task SendTaskOrchestrationMessageAsync(ITaskMessage message)
         {
             return SendTaskOrchestrationMessageBatchAsync(message);
         }
 
         /// <inheritdoc />
-        public Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages)
+        public Task SendTaskOrchestrationMessageBatchAsync(params ITaskMessage[] messages)
         {
             foreach (var message in messages)
             {
@@ -503,10 +527,10 @@ namespace DurableTask.CosmosDB
         public async Task CompleteTaskOrchestrationWorkItemAsync(
             TaskOrchestrationWorkItem workItem,
             OrchestrationRuntimeState newOrchestrationRuntimeState,
-            IList<TaskMessage> outboundMessages,
-            IList<TaskMessage> orchestratorMessages,
-            IList<TaskMessage> workItemTimerMessages,
-            TaskMessage continuedAsNewMessage,
+            IList<ITaskMessage> outboundMessages,
+            IList<ITaskMessage> orchestratorMessages,
+            IList<ITaskMessage> workItemTimerMessages,
+            ITaskMessage continuedAsNewMessage,
             OrchestrationState state)
         {
             await this.thisLock.WaitAsync();
@@ -522,10 +546,10 @@ namespace DurableTask.CosmosDB
 
                 if (outboundMessages != null)
                 {
-                    foreach (TaskMessage m in outboundMessages)
+                    foreach (var m in outboundMessages)
                     {
                         // AFFANDAR : TODO : make async
-                        this.workerQueue.SendMessageAsync(m);
+                        await this.workerQueue.SendMessageAsync(m);
                     }
                 }
 
@@ -534,7 +558,7 @@ namespace DurableTask.CosmosDB
                     await this.timerLock.WaitAsync();
                     try
                     {
-                        foreach (TaskMessage m in workItemTimerMessages)
+                        foreach (var m in workItemTimerMessages)
                         {
                             this.timerMessages.Add(m);
                         }
@@ -670,7 +694,7 @@ namespace DurableTask.CosmosDB
         /// <inheritdoc />
         public async Task<TaskActivityWorkItem> LockNextTaskActivityWorkItem(TimeSpan receiveTimeout, CancellationToken cancellationToken)
         {
-            TaskMessage taskMessage = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
+            var taskMessage = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, this.cancellationTokenSource.Token).Token);
 
             if (taskMessage == null)
@@ -687,19 +711,19 @@ namespace DurableTask.CosmosDB
         }
 
         /// <inheritdoc />
-        public Task AbandonTaskActivityWorkItemAsync(TaskActivityWorkItem workItem)
+        public async Task AbandonTaskActivityWorkItemAsync(TaskActivityWorkItem workItem)
         {
-            this.workerQueue.AbandonMessageAsync(workItem.TaskMessage);
-            return Task.FromResult<object>(null);
+            await this.workerQueue.AbandonMessageAsync(workItem.TaskMessage);
+            //return Task.FromResult<object>(null);
         }
 
         /// <inheritdoc />
-        public Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage)
+        public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, ITaskMessage responseMessage)
         {
             this.thisLock.Wait();
             try
             {
-                this.workerQueue.CompleteMessageAsync(workItem.TaskMessage);
+                await this.workerQueue.CompleteMessageAsync(workItem.TaskMessage);
                 this.orchestratorQueue.SendMessage(responseMessage);
             }
             finally
@@ -707,7 +731,7 @@ namespace DurableTask.CosmosDB
                 this.thisLock.Release();
             }
 
-            return Task.FromResult<object>(null);
+          //  return Task.FromResult<object>(null);
         }
 
         /// <inheritdoc />

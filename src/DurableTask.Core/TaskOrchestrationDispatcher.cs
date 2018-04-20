@@ -106,14 +106,14 @@ namespace DurableTask.Core
         /// <param name="workItem">The work item to process</param>
         protected async Task OnProcessWorkItemAsync(TaskOrchestrationWorkItem workItem)
         {
-            var messagesToSend = new List<TaskMessage>();
-            var timerMessages = new List<TaskMessage>();
-            var subOrchestrationMessages = new List<TaskMessage>();
+            var messagesToSend = new List<ITaskMessage>();
+            var timerMessages = new List<ITaskMessage>();
+            var subOrchestrationMessages = new List<ITaskMessage>();
             bool isCompleted = false;
             bool continuedAsNew = false;
 
             ExecutionStartedEvent continueAsNewExecutionStarted = null;
-            TaskMessage continuedAsNewMessage = null;
+            ITaskMessage continuedAsNewMessage = null;
 
             OrchestrationRuntimeState runtimeState = workItem.OrchestrationRuntimeState;
 
@@ -174,7 +174,7 @@ namespace DurableTask.Core
                                     runtimeState, IncludeParameters));
                             break;
                         case OrchestratorActionType.OrchestrationComplete:
-                            TaskMessage workflowInstanceCompletedMessage =
+                            var workflowInstanceCompletedMessage =
                                 ProcessWorkflowCompletedTaskDecision((OrchestrationCompleteOrchestratorAction) decision, runtimeState, IncludeDetails, out continuedAsNew);
                             if (workflowInstanceCompletedMessage != null)
                             {
@@ -315,7 +315,7 @@ namespace DurableTask.Core
 
         bool ReconcileMessagesWithState(TaskOrchestrationWorkItem workItem)
         {
-            foreach (TaskMessage message in workItem.NewMessages)
+            foreach (var message in workItem.NewMessages)
             {
                 OrchestrationInstance orchestrationInstance = message.OrchestrationInstance;
                 if (string.IsNullOrWhiteSpace(orchestrationInstance?.InstanceId))
@@ -379,7 +379,7 @@ namespace DurableTask.Core
             return true;
         }
 
-        static TaskMessage ProcessWorkflowCompletedTaskDecision(
+        static ITaskMessage ProcessWorkflowCompletedTaskDecision(
             OrchestrationCompleteOrchestratorAction completeOrchestratorAction, 
             OrchestrationRuntimeState runtimeState,
             bool includeDetails, 
@@ -471,7 +471,7 @@ namespace DurableTask.Core
             return null;
         }
 
-        static TaskMessage ProcessScheduleTaskDecision(
+        static ITaskMessage ProcessScheduleTaskDecision(
             ScheduleTaskOrchestratorAction scheduleTaskOrchestratorAction,
             OrchestrationRuntimeState runtimeState, 
             bool includeParameters)
@@ -501,7 +501,7 @@ namespace DurableTask.Core
             return taskMessage;
         }
 
-        static TaskMessage ProcessCreateTimerDecision(
+        static ITaskMessage ProcessCreateTimerDecision(
             CreateTimerOrchestratorAction createTimerOrchestratorAction, 
             OrchestrationRuntimeState runtimeState)
         {
@@ -523,7 +523,7 @@ namespace DurableTask.Core
             return taskMessage;
         }
 
-        static TaskMessage ProcessCreateSubOrchestrationInstanceDecision(
+        static ITaskMessage ProcessCreateSubOrchestrationInstanceDecision(
             CreateSubOrchestrationAction createSubOrchestrationAction,
             OrchestrationRuntimeState runtimeState, 
             bool includeParameters)

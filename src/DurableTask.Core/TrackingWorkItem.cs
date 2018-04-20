@@ -34,7 +34,7 @@ namespace DurableTask.Core
         /// <summary>
         /// The list of new messages to process tracking for
         /// </summary>
-        public IList<TaskMessage> NewMessages;
+        public IList<ITaskMessage> NewMessages;
 
         /// <summary>
         /// The session instance this tracking item is associated with

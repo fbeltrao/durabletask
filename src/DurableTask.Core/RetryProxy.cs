@@ -85,11 +85,12 @@ namespace DurableTask.Core
         {
             Func<Task<ReturnType>> retryCall = () => 
             {
-#if NETSTANDARD2_0
                 return Dynamitey.Dynamic.InvokeMember(wrappedObject, methodName, args);
-#else
-                return ImpromptuInterface.Impromptu.InvokeMember(wrappedObject, methodName, args);
-#endif
+//#if NETSTANDARD2_0
+//                return Dynamitey.Dynamic.InvokeMember(wrappedObject, methodName, args);
+//#else
+//                return ImpromptuInterface.Impromptu.InvokeMember(wrappedObject, methodName, args);
+//#endif
             };
 
             var retryInterceptor = new RetryInterceptor<ReturnType>(context, retryOptions, retryCall);

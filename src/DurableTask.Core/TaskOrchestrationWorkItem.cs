@@ -40,6 +40,6 @@ namespace DurableTask.Core
         /// <summary>
         /// The list of new task messages associated with this work item instance
         /// </summary>
-        public IList<TaskMessage> NewMessages;
+        public IList<ITaskMessage> NewMessages;
     }
 }

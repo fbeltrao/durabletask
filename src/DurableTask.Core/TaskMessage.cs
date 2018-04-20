@@ -18,25 +18,51 @@ namespace DurableTask.Core
     using DurableTask.Core.History;
 
     /// <summary>
-    /// Wire level transport object for task messages containing events and orchestration instance information
+    /// ITaskMessage interface
     /// </summary>
-    [DataContract]
-    public class TaskMessage : IExtensibleDataObject
+    public interface ITaskMessage
     {
         /// <summary>
         /// Even information for this taks message
         /// </summary>
-        [DataMember] public HistoryEvent Event;
+        [DataMember] HistoryEvent Event { get; set; }
 
         /// <summary>
         /// Sequence number for ordering of messages in history tracking
         /// </summary>
-        [DataMember] public long SequenceNumber;
+        [DataMember] long SequenceNumber { get; set; }
 
         /// <summary>
         /// The orchestration instance information
         /// </summary>
-        [DataMember] public OrchestrationInstance OrchestrationInstance;
+        [DataMember] OrchestrationInstance OrchestrationInstance { get; set; }
+
+        /// <summary>
+        /// Implementation for <see cref="IExtensibleDataObject.ExtensionData"/>.
+        /// </summary>
+        ExtensionDataObject ExtensionData { get; set; }
+    }
+
+    /// <summary>
+    /// Wire level transport object for task messages containing events and orchestration instance information
+    /// </summary>
+    [DataContract]
+    public class TaskMessage : IExtensibleDataObject, ITaskMessage
+    {
+        /// <summary>
+        /// Even information for this taks message
+        /// </summary>
+        [DataMember] public HistoryEvent Event { get; set; }
+
+        /// <summary>
+        /// Sequence number for ordering of messages in history tracking
+        /// </summary>
+        [DataMember] public long SequenceNumber { get; set; }
+
+        /// <summary>
+        /// The orchestration instance information
+        /// </summary>
+        [DataMember] public OrchestrationInstance OrchestrationInstance { get; set; }
 
         /// <summary>
         /// Implementation for <see cref="IExtensibleDataObject.ExtensionData"/>.

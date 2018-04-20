@@ -55,7 +55,7 @@ namespace DurableTask.Emulator
             }
         }
 
-        public void SendMessage(TaskMessage message)
+        public void SendMessage(ITaskMessage message)
         {
             lock(this.ThisLock)
             {
@@ -82,7 +82,7 @@ namespace DurableTask.Emulator
                 {
                     Id = message.OrchestrationInstance.InstanceId,
                     SessionState = null,
-                    Messages = new List<TaskMessage>() {  message }
+                    Messages = new List<ITaskMessage>() {  message }
                 });
             }
         }
@@ -90,8 +90,8 @@ namespace DurableTask.Emulator
         public void CompleteSession(
             string id, 
             byte[] newState, 
-            IList<TaskMessage> newMessages,
-            TaskMessage continuedAsNewMessage)
+            IList<ITaskMessage> newMessages,
+            ITaskMessage continuedAsNewMessage)
         {
             lock (this.ThisLock)
             {
@@ -106,7 +106,7 @@ namespace DurableTask.Emulator
                 this.lockedSessionQueue.Remove(taskSession);
 
                 // make the required updates to the session
-                foreach(TaskMessage tm in taskSession.LockTable)
+                foreach(var tm in taskSession.LockTable)
                 {
                     taskSession.Messages.Remove(tm);
                 }
@@ -120,7 +120,7 @@ namespace DurableTask.Emulator
                     this.sessionQueue.Add(taskSession);
                 }
 
-                foreach (TaskMessage m in newMessages)
+                foreach (var m in newMessages)
                 {
                     this.SendMessage(m);
                 }

@@ -22,26 +22,26 @@ namespace DurableTask.CosmosDB
 
     internal class PeeklockQueue
     {
-        List<TaskMessage> messages;
-        HashSet<TaskMessage> lockTable;
+        List<ITaskMessage> messages;
+        HashSet<ITaskMessage> lockTable;
 
         readonly object thisLock = new object();
 
 
         public PeeklockQueue()
         {
-            this.messages = new List<TaskMessage>();
-            this.lockTable = new HashSet<TaskMessage>();
+            this.messages = new List<ITaskMessage>();
+            this.lockTable = new HashSet<ITaskMessage>();
         }
 
-        public async Task<TaskMessage> ReceiveMessageAsync(TimeSpan receiveTimeout, CancellationToken cancellationToken)
+        public async Task<ITaskMessage> ReceiveMessageAsync(TimeSpan receiveTimeout, CancellationToken cancellationToken)
         {
             Stopwatch timer = Stopwatch.StartNew();
             while (timer.Elapsed < receiveTimeout && !cancellationToken.IsCancellationRequested)
             {
                 lock(this.thisLock)
                 {
-                    foreach (TaskMessage tm in this.messages)
+                    foreach (var tm in this.messages)
                     {
                         if (!this.lockTable.Contains(tm))
                         {
@@ -62,7 +62,7 @@ namespace DurableTask.CosmosDB
             return null;
         }
 
-        public void SendMessageAsync(TaskMessage message)
+        public void SendMessageAsync(ITaskMessage message)
         {
             lock(this.thisLock)
             {
@@ -70,7 +70,7 @@ namespace DurableTask.CosmosDB
             }
         }
 
-        public void CompleteMessageAsync(TaskMessage message)
+        public void CompleteMessageAsync(ITaskMessage message)
         {
             lock(this.thisLock)
             {
@@ -84,7 +84,7 @@ namespace DurableTask.CosmosDB
             }
         }
 
-        public void AbandonMessageAsync(TaskMessage message)
+        public void AbandonMessageAsync(ITaskMessage message)
         {
             lock (this.thisLock)
             {

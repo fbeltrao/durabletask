@@ -151,7 +151,7 @@ namespace DurableTask.AzureStorage
 
         static void TraceMessageReceived(string storageAccountName, string taskHub, MessageData data)
         {
-            TaskMessage taskMessage = data.TaskMessage;
+            var taskMessage = data.TaskMessage;
             CloudQueueMessage queueMessage = data.OriginalQueueMessage;
 
             AnalyticsEventSource.Log.ReceivedMessage(
@@ -180,7 +180,7 @@ namespace DurableTask.AzureStorage
             }
         }
 
-        public CloudQueueMessage CreateOutboundQueueMessage(TaskMessage taskMessage, string queueName)
+        public CloudQueueMessage CreateOutboundQueueMessage(ITaskMessage taskMessage, string queueName)
         {
             return CreateOutboundQueueMessageInternal(this.storageAccountName, this.taskHub, queueName, taskMessage);
         }
@@ -189,7 +189,7 @@ namespace DurableTask.AzureStorage
             string storageAccountName,
             string taskHub,
             string queueName,
-            TaskMessage taskMessage)
+            ITaskMessage taskMessage)
         {
             // We transfer to a new trace activity ID every time a new outbound queue message is created.
             Guid outboundTraceActivityId = Guid.NewGuid();
