@@ -753,6 +753,9 @@ namespace DurableTask.CosmosDB
         {
             if (disposing)
             {
+                this.timerLock.Dispose();
+                this.thisLock.Dispose();
+                this.documentClient.Dispose();
                 this.cancellationTokenSource.Cancel();
                 this.cancellationTokenSource.Dispose();
             }
