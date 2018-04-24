@@ -39,7 +39,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.Emulator.Tests"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.AzureStorage", "src\DurableTask.AzureStorage\DurableTask.AzureStorage.csproj", "{F1B270EA-9DC2-4753-B3DE-B45D3C128FDB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DurableTask.AzureStorage.Tests", "Test\DurableTask.AzureStorage.Tests\DurableTask.AzureStorage.Tests.csproj", "{7CD147F9-1BB9-41FD-A310-BCA07447A6B9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.AzureStorage.Tests", "Test\DurableTask.AzureStorage.Tests\DurableTask.AzureStorage.Tests.csproj", "{7CD147F9-1BB9-41FD-A310-BCA07447A6B9}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.PersistentProvider", "src\DurableTask.PersistentProvider\DurableTask.PersistentProvider.csproj", "{9CC0536D-781D-453E-A702-8A4542084C1E}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.PersistentProvider.Tests", "Test\DurableTask.PersistentProvider.Tests\DurableTask.PersistentProvider.Tests.csproj", "{A9C31BE4-630D-4751-AF06-A9D41FEF554C}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.CosmosDB", "src\DurableTask.CosmosDB\DurableTask.CosmosDB.csproj", "{32DEFE84-30D6-43A4-8112-B0DD907C6BF0}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.CosmosDB.Tests", "Test\DurableTask.CosmosDB.Tests\DurableTask.CosmosDB.Tests.csproj", "{007FD559-A096-4397-9F13-47612AD4E918}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -91,6 +99,22 @@ Global
 		{7CD147F9-1BB9-41FD-A310-BCA07447A6B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7CD147F9-1BB9-41FD-A310-BCA07447A6B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7CD147F9-1BB9-41FD-A310-BCA07447A6B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9CC0536D-781D-453E-A702-8A4542084C1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CC0536D-781D-453E-A702-8A4542084C1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CC0536D-781D-453E-A702-8A4542084C1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CC0536D-781D-453E-A702-8A4542084C1E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9C31BE4-630D-4751-AF06-A9D41FEF554C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9C31BE4-630D-4751-AF06-A9D41FEF554C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9C31BE4-630D-4751-AF06-A9D41FEF554C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9C31BE4-630D-4751-AF06-A9D41FEF554C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{32DEFE84-30D6-43A4-8112-B0DD907C6BF0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{32DEFE84-30D6-43A4-8112-B0DD907C6BF0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{32DEFE84-30D6-43A4-8112-B0DD907C6BF0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{32DEFE84-30D6-43A4-8112-B0DD907C6BF0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{007FD559-A096-4397-9F13-47612AD4E918}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{007FD559-A096-4397-9F13-47612AD4E918}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{007FD559-A096-4397-9F13-47612AD4E918}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{007FD559-A096-4397-9F13-47612AD4E918}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -107,8 +131,13 @@ Global
 		{295A38D6-F8BF-446A-A274-E78BD1C56514} = {95C69A06-7F62-4652-A480-207B614C2869}
 		{F1B270EA-9DC2-4753-B3DE-B45D3C128FDB} = {DBCD161C-D409-48E5-924E-9B7FA1C36B84}
 		{7CD147F9-1BB9-41FD-A310-BCA07447A6B9} = {95C69A06-7F62-4652-A480-207B614C2869}
+		{9CC0536D-781D-453E-A702-8A4542084C1E} = {DBCD161C-D409-48E5-924E-9B7FA1C36B84}
+		{A9C31BE4-630D-4751-AF06-A9D41FEF554C} = {95C69A06-7F62-4652-A480-207B614C2869}
+		{32DEFE84-30D6-43A4-8112-B0DD907C6BF0} = {DBCD161C-D409-48E5-924E-9B7FA1C36B84}
+		{007FD559-A096-4397-9F13-47612AD4E918} = {95C69A06-7F62-4652-A480-207B614C2869}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		EnterpriseLibraryConfigurationToolBinariesPath = packages\TransientFaultHandling.Core.5.1.1209.1\lib\NET4
+		SolutionGuid = {6F74A4E1-C5F3-43E0-9FF0-973F7425B417}
 	EndGlobalSection
 EndGlobal
