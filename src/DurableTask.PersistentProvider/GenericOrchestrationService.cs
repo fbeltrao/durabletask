@@ -10,18 +10,18 @@ namespace DurableTask.PersistentProvider
 {
     public class GenericOrchestrationService : IOrchestrationService, IOrchestrationServiceClient, IDisposable
     {
-        IWorkerQueue workerQueue;
-        IOrchestrationQueue orchestrationQueue;
-        IStateProvider stateProvider;
+        //IWorkerQueue workerQueue = null;
+        //IOrchestrationQueue orchestrationQueue = null;
+        //IStateProvider stateProvider = null;
 
         #region IOrchestration Service implementation
-        public int TaskOrchestrationDispatcherCount => throw new NotImplementedException();
+        public int TaskOrchestrationDispatcherCount { get; set; }
 
-        public int MaxConcurrentTaskOrchestrationWorkItems => throw new NotImplementedException();
+        public int MaxConcurrentTaskOrchestrationWorkItems { get; set; }
 
-        public int TaskActivityDispatcherCount => throw new NotImplementedException();
+        public int TaskActivityDispatcherCount { get; set; }
 
-        public int MaxConcurrentTaskActivityWorkItems => throw new NotImplementedException();
+        public int MaxConcurrentTaskActivityWorkItems { get; set; }
 
         public Task AbandonTaskActivityWorkItemAsync(TaskActivityWorkItem workItem)
         {
