@@ -25,6 +25,7 @@ namespace DurableTask.CosmosDB
     using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
+    using Microsoft.Azure.Documents.Linq;
 
     /// <summary>
     /// Fully functional in-proc orchestration service for testing
@@ -53,10 +54,10 @@ namespace DurableTask.CosmosDB
         //Dictionary<string, Dictionary<string, OrchestrationState>> instanceStore;
 
         //Dictionary<string, Tuple<List<TaskMessage>, byte[]>> sessionLock;
-            
-        SemaphoreSlim thisLock = new SemaphoreSlim(1,1);
-        SemaphoreSlim timerLock = new SemaphoreSlim(1,1);
-        
+
+        SemaphoreSlim thisLock = new SemaphoreSlim(1, 1);
+        SemaphoreSlim timerLock = new SemaphoreSlim(1, 1);
+
         ConcurrentDictionary<string, TaskCompletionSource<OrchestrationState>> orchestrationWaiters;
 
         /// <summary>
@@ -87,7 +88,7 @@ namespace DurableTask.CosmosDB
 
 
             this.orchestrationWaiters = new ConcurrentDictionary<string, TaskCompletionSource<OrchestrationState>>();
-            this.cancellationTokenSource = new CancellationTokenSource();            
+            this.cancellationTokenSource = new CancellationTokenSource();
         }
 
         async Task TimerMessageSchedulerAsync()
@@ -113,7 +114,7 @@ namespace DurableTask.CosmosDB
                             this.timerMessages.Remove(tm);
                         }
                     }
-                 }
+                }
                 finally
                 {
                     this.timerLock.Release();
@@ -142,19 +143,20 @@ namespace DurableTask.CosmosDB
             {
                 Id = this.instancesCollectionName,
             };
-            
+
             instanceCollection.PartitionKey.Paths.Add("/instanceId");
-            instanceCollection.IndexingPolicy.Automatic = false;
-            instanceCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
-            instanceCollection.IndexingPolicy.IncludedPaths.Clear();
-            instanceCollection.IndexingPolicy.ExcludedPaths.Clear();
+            //instanceCollection.IndexingPolicy.Automatic = false;
+            //     instanceCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
+            //instanceCollection.IndexingPolicy.IncludedPaths.Clear();
+            //instanceCollection.IndexingPolicy.ExcludedPaths.Clear();
+            // instanceCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "executions" });
             //instanceCollection.DefaultTimeToLive = (int)TimeSpan.FromDays(30).TotalSeconds;
 
             ResourceResponse<DocumentCollection> collection = await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 instanceCollection,
                 new RequestOptions { OfferThroughput = 10000 });
-            
+
 
             var historyCollection = new DocumentCollection()
             {
@@ -162,16 +164,17 @@ namespace DurableTask.CosmosDB
             };
 
             historyCollection.PartitionKey.Paths.Add("/instanceId");
-            historyCollection.IndexingPolicy.Automatic = false;
-            historyCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
-            historyCollection.IndexingPolicy.IncludedPaths.Clear();
-            historyCollection.IndexingPolicy.ExcludedPaths.Clear();
+            //historyCollection.IndexingPolicy.Automatic = false;
+            //historyCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
+            //historyCollection.IndexingPolicy.IncludedPaths.Clear();
+            //historyCollection.IndexingPolicy.ExcludedPaths.Clear();
+            //instanceCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "/executions" });
             //historyCollection.DefaultTimeToLive = (int)TimeSpan.FromDays(30).TotalSeconds;
 
             collection = await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 historyCollection,
-                new RequestOptions { OfferThroughput = 10000 });            
+                new RequestOptions { OfferThroughput = 10000 });
         }
 
         /// <inheritdoc />
@@ -257,18 +260,19 @@ namespace DurableTask.CosmosDB
                 {
                     stateDocument = new OrchestrationStateDocument()
                     {
-                        Id = creationMessage.OrchestrationInstance.InstanceId
+                        InstanceId = creationMessage.OrchestrationInstance.InstanceId
                     };
-                    stateDocument.Executions = new Dictionary<string, OrchestrationState>();                    
+                    stateDocument.Executions = new Dictionary<string, OrchestrationState>();
                 }
 
+                newState.LastUpdatedTime = DateTime.UtcNow;
                 stateDocument.Executions[newState.OrchestrationInstance.ExecutionId] = newState;
-                await UpsertOrchestrationState(stateDocument);
+                ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
             }
             finally
             {
                 thisLock.Release();
-            }            
+            }
         }
 
         /// <inheritdoc />
@@ -360,7 +364,7 @@ namespace DurableTask.CosmosDB
             {
                 this.thisLock.Release();
             }
-            
+
 
             var cts = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
@@ -380,37 +384,60 @@ namespace DurableTask.CosmosDB
 
         private async Task<OrchestrationStateDocument> GetOrchestrationState(string instanceId)
         {
+            OrchestrationStateDocument result = null;
             try
             {
-                var documentUri = UriFactory.CreateDocumentUri(DatabaseName, this.instancesCollectionName, instanceId);
-                var stateDocument = await this.documentClient.ReadDocumentAsync<OrchestrationStateDocument>(
-                    documentUri,
-                    new RequestOptions() { PartitionKey = new PartitionKey(instanceId) }
-                    );
 
-                return stateDocument.Document;
+                var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
+                var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
+                {
+                    PartitionKey = new PartitionKey(instanceId),
+
+                })
+                    .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
+
+                var list = await query.ExecuteNextAsync<OrchestrationStateDocument>();
+
+                if (list != null && list.Count > 0)
+                {
+                    result = list.FirstOrDefault();
+                }
+
+                //var stateDocument = await this.documentClient.ReadDocumentAsync<OrchestrationStateDocument>(
+                //    documentUri,
+                //    new RequestOptions() { PartitionKey = new PartitionKey(instanceId) }
+                //    );
+
+                //return stateDocument.Document;
             }
             catch (DocumentClientException ex)
             {
-                
+
                 if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
                     return default(OrchestrationStateDocument);
 
                 throw;
             }
+
+            return result;
         }
 
         async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument doc)
         {
             var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
 
-            return await documentClient.UpsertDocumentAsync(documentUri, doc);            
+
+
+            return await documentClient.UpsertDocumentAsync(documentUri, doc, new RequestOptions()
+            {
+                PartitionKey = new PartitionKey(doc.InstanceId)
+            });
         }
 
         /// <inheritdoc />
         public async Task<OrchestrationState> GetOrchestrationStateAsync(string instanceId, string executionId)
         {
-            OrchestrationState response = null; 
+            OrchestrationState response = null;
 
             await this.thisLock.WaitAsync();
             try
@@ -435,7 +462,7 @@ namespace DurableTask.CosmosDB
         public async Task<IList<OrchestrationState>> GetOrchestrationStateAsync(string instanceId, bool allExecutions)
         {
             IList<OrchestrationState> response = null;
-            
+
 
             await this.thisLock.WaitAsync();
             try
@@ -553,12 +580,15 @@ namespace DurableTask.CosmosDB
                     {
                         doc = new OrchestrationStateDocument()
                         {
-                            Id = workItem.InstanceId,
+                            InstanceId = workItem.InstanceId,
                         };
+
                         doc.Executions = new Dictionary<string, OrchestrationState>();
 
                     }
 
+                    state.LastUpdatedTime = DateTime.UtcNow;
+                    
                     doc.Executions[workItem.OrchestrationRuntimeState.OrchestrationInstance.ExecutionId] = state;
 
                     await UpsertOrchestrationState(doc);
@@ -603,7 +633,7 @@ namespace DurableTask.CosmosDB
             finally
             {
                 this.thisLock.Release();
-            }            
+            }
         }
 
         /// <inheritdoc />
