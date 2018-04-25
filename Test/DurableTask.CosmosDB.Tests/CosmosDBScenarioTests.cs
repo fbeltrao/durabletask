@@ -136,14 +136,19 @@ namespace DurableTask.CosmosDB.Tests
                 //       are processed by the same instance at the same time, resulting in a corrupt
                 //       storage failure in DTFx.
                 await Task.Delay(2000);
+                var s1 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "incr");
                 await Task.Delay(2000);
+                var s2 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "incr");
                 await Task.Delay(2000);
+                var s3 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "decr");
                 await Task.Delay(2000);
+                var s4 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "incr");
                 await Task.Delay(2000);
+                var s5 = await client.GetStatusAsync();
 
                 // Make sure it's still running and didn't complete early (or fail).
                 var status = await client.GetStatusAsync();

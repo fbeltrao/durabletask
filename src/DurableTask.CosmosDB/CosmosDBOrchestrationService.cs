@@ -408,6 +408,7 @@ namespace DurableTask.CosmosDB
                 var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
                 {
                     PartitionKey = new PartitionKey(instanceId),
+                    EnableScanInQuery = true
 
                 })
                     .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
@@ -441,9 +442,6 @@ namespace DurableTask.CosmosDB
         async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument doc)
         {
             var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-
-
-
             return await documentClient.UpsertDocumentAsync(documentUri, doc, new RequestOptions()
             {
                 PartitionKey = new PartitionKey(doc.InstanceId)
@@ -603,10 +601,9 @@ namespace DurableTask.CosmosDB
 
                     }
 
-                    state.LastUpdatedTime = DateTime.UtcNow;
-                    
+                    state.LastUpdatedTime = DateTime.UtcNow;                    
                     doc.Executions[workItem.OrchestrationRuntimeState.OrchestrationInstance.ExecutionId] = state;
-
+                    doc.SetPropertyValue("executions", doc.Executions);
                     await UpsertOrchestrationState(doc);
 
                     // signal any waiters waiting on instanceid_executionid or just the latest instanceid_
