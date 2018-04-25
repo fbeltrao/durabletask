@@ -31,7 +31,7 @@ namespace DurableTask.CosmosDB
     /// <summary>
     /// Fully functional in-proc orchestration service for testing
     /// </summary>
-    public partial class CosmosDBOrchestrationService : IOrchestrationService, IOrchestrationServiceClient, IDisposable
+    public class CosmosDBOrchestrationService : IOrchestrationService, IOrchestrationServiceClient, IDisposable
     {
 
         Dictionary<string, byte[]> sessionState;
@@ -183,9 +183,9 @@ namespace DurableTask.CosmosDB
                 QueueCollectionDefinition = new CosmosDBCollectionDefinition
                 {
                     CollectionName = "queue",
-                    DbName = DatabaseName,                    
-                    Endpoint = System.Configuration.ConfigurationManager.AppSettings["CosmosDBEndpoint"],
-                    SecretKey = System.Configuration.ConfigurationManager.AppSettings["CosmosDBAuthKey"],
+                    DbName = DatabaseName,
+                    Endpoint = ConfigurationManager.AppSettings["CosmosDBEndpoint"],
+                    SecretKey = ConfigurationManager.AppSettings["CosmosDBAuthKey"],
                     Throughput = 400,
                 }
             };
