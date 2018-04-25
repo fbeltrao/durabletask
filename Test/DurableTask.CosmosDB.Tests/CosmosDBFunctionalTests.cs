@@ -14,13 +14,17 @@
 namespace DurableTask.CosmosDB.Tests
 {
     using System;
+    using System.Configuration;
     using System.Diagnostics;
+    using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
     using DurableTask.Core;
     using DurableTask.CosmosDB;
     using DurableTask.Test.Orchestrations;
+    using Microsoft.Azure.Documents.Client;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
+    using Newtonsoft.Json;
 
     /// <summary>
     /// Test the core dtfx via the CosmosDB local orchestration service and client provider
@@ -34,6 +38,33 @@ namespace DurableTask.CosmosDB.Tests
         {
             return TestHelpers.GetAndCreateCosmosDBOrchestrationService();
         }
+
+        [TestInitialize]
+        public async Task CleanupCosmos()
+        {
+             Uri endpointUri = new Uri(ConfigurationManager.AppSettings["CosmosDBEndpoint"]);
+             string authKey = ConfigurationManager.AppSettings["CosmosDBAuthKey"];
+
+            using (var client = new DocumentClient(endpointUri, authKey))
+            {
+                try
+                {
+                    var queueUri = UriFactory.CreateDocumentCollectionUri("durabletask", "queue");
+                    var docs = client.CreateDocumentQuery(queueUri);
+                    foreach (var doc in docs)
+                    {
+                        await client.DeleteDocumentAsync(doc.SelfLink);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine(ex);
+                    throw;
+                }
+            }
+        }
+
+    
 
         [TestMethod]
         public async Task MockOrchestrationTest()
@@ -156,7 +187,7 @@ namespace DurableTask.CosmosDB.Tests
 
             OrchestrationInstance id = await client.CreateOrchestrationInstanceAsync(typeof(ParentWorkflow), true);
 
-            OrchestrationState result = await client.WaitForOrchestrationAsync(id, 
+            OrchestrationState result = await client.WaitForOrchestrationAsync(id,
                 TimeSpan.FromSeconds(40), CancellationToken.None);
 
             Assert.AreEqual(OrchestrationStatus.Completed, result.OrchestrationStatus);
@@ -246,5 +277,54 @@ namespace DurableTask.CosmosDB.Tests
 
         //    await orchService.StopAsync();
         //}
+
+
+        [TestMethod]
+        public void DeserializationTest()
+        {
+            var text = @"{
+    ""$type"": ""DurableTask.CosmosDB.CosmosDBQueueItem`1[[DurableTask.Core.TaskMessage, DurableTask.Core]], DurableTask.CosmosDB"",
+    ""id"": ""beae7527-adc1-4e18-9db9-102b0c500fad"",
+    ""status"": ""InProgress"",
+    ""queuedTime"": 1524679977,
+    ""processStartTime"": 0,
+    ""completedTime"": 0,
+    ""currentWorker"": null,
+    ""workerExpires"": 0,
+    ""data"": {
+                ""$type"": ""DurableTask.Core.TaskMessage, DurableTask.Core"",
+        ""Event"": {
+                    ""$type"": ""DurableTask.Core.History.TaskScheduledEvent, DurableTask.Core"",
+            ""Name"": ""DurableTask.Test.Orchestrations.SimplestGetUserTask"",
+            ""Version"": """",
+            ""Input"": ""[]"",
+            ""EventId"": 0,
+            ""IsPlayed"": false,
+            ""Timestamp"": ""2018-04-25T18:12:52.2433336Z""
+        },
+        ""SequenceNumber"": 0,
+        ""OrchestrationInstance"": {
+                    ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+            ""InstanceId"": ""5aaccc2e0a11495fb16235d6599bd95c"",
+            ""ExecutionId"": ""e7eb784b05784264a1b47ad0fb27b244""
+        }
+            },
+    ""errors"": 0,
+    ""_rid"": ""d9UcALvtLAUKAAAAAAAAAA=="",
+    ""_self"": ""dbs/d9UcAA==/colls/d9UcALvtLAU=/docs/d9UcALvtLAUKAAAAAAAAAA==/"",
+    ""_etag"": ""\""00000000-0000-0000-dcc1-0a13077c01d3\"""",
+    ""_attachments"": ""attachments/"",
+    ""lockedUntil"": """",
+    ""_ts"": 1524679977
+}";
+
+            var tm = JsonConvert.DeserializeObject<CosmosDBQueueItem<TaskMessage>>(text,
+                new JsonSerializerSettings()
+                {
+                    TypeNameHandling = TypeNameHandling.All
+                }
+                );
+            Assert.IsNotNull(tm);
+        }
     }
 }

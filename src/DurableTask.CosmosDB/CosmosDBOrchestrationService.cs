@@ -21,6 +21,7 @@ namespace DurableTask.CosmosDB
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;
+    using System.Configuration;
     using System.Linq;
     using System.Text;
     using System.Threading;
@@ -170,7 +171,22 @@ namespace DurableTask.CosmosDB
             await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 historyCollection,
-                new RequestOptions { OfferThroughput = 10000 });            
+                new RequestOptions { OfferThroughput = 10000 });
+
+          
+            var queueSettings = new CosmosDBQueueSettings
+            {
+                QueueCollectionDefinition = new CosmosDBCollectionDefinition
+                {
+                    CollectionName = "queue",
+                    DbName = DatabaseName,                    
+                    Endpoint = System.Configuration.ConfigurationManager.AppSettings["CosmosDBEndpoint"],
+                    SecretKey = System.Configuration.ConfigurationManager.AppSettings["CosmosDBAuthKey"],
+                    Throughput = 400,
+                }
+            };
+
+            await this.workerQueue.CreateAsync(queueSettings);
         }
 
         /// <inheritdoc />
@@ -525,7 +541,7 @@ namespace DurableTask.CosmosDB
                     foreach (TaskMessage m in outboundMessages)
                     {
                         // AFFANDAR : TODO : make async
-                        this.workerQueue.SendMessageAsync(m);
+                        await this.workerQueue.SendMessageAsync(m);
                     }
                 }
 
@@ -670,9 +686,10 @@ namespace DurableTask.CosmosDB
         /// <inheritdoc />
         public async Task<TaskActivityWorkItem> LockNextTaskActivityWorkItem(TimeSpan receiveTimeout, CancellationToken cancellationToken)
         {
-            TaskMessage taskMessage = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
+            var queuedItem = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, this.cancellationTokenSource.Token).Token);
 
+            TaskMessage taskMessage = queuedItem.data;
             if (taskMessage == null)
             {
                 return null;
@@ -680,7 +697,7 @@ namespace DurableTask.CosmosDB
 
             return new TaskActivityWorkItem
             {
-                Id = "N/A",        // for the inmem provider we will just use the TaskMessage object ref itself as the id
+                Id = queuedItem.id,        // for the inmem provider we will just use the TaskMessage object ref itself as the id
                 LockedUntilUtc = DateTime.UtcNow.AddMinutes(5),
                 TaskMessage = taskMessage,
             };
@@ -694,12 +711,12 @@ namespace DurableTask.CosmosDB
         }
 
         /// <inheritdoc />
-        public Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage)
+        public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage)
         {
             this.thisLock.Wait();
             try
             {
-                this.workerQueue.CompleteMessageAsync(workItem.TaskMessage);
+                await this.workerQueue.CompleteMessageAsync(workItem.Id, workItem.TaskMessage);
                 this.orchestratorQueue.SendMessage(responseMessage);
             }
             finally
@@ -707,7 +724,7 @@ namespace DurableTask.CosmosDB
                 this.thisLock.Release();
             }
 
-            return Task.FromResult<object>(null);
+            //return Task.FromResult<object>(null);
         }
 
         /// <inheritdoc />

@@ -70,7 +70,7 @@ namespace DurableTask.Core.History
         /// <summary>
         /// Gets the event type
         /// </summary>
-        [DataMember]
+        [DataMember][Newtonsoft.Json.JsonIgnore]
         public virtual EventType EventType { get; private set; }
 
         /// <summary>
