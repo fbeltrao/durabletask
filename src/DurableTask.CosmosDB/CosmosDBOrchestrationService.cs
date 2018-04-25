@@ -143,31 +143,32 @@ namespace DurableTask.CosmosDB
                 Id = this.instancesCollectionName,
             };
             
-            instanceCollection.PartitionKey.Paths.Add("/id");
+            instanceCollection.PartitionKey.Paths.Add("/instanceId");
             instanceCollection.IndexingPolicy.Automatic = false;
             instanceCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
             instanceCollection.IndexingPolicy.IncludedPaths.Clear();
             instanceCollection.IndexingPolicy.ExcludedPaths.Clear();
             //instanceCollection.DefaultTimeToLive = (int)TimeSpan.FromDays(30).TotalSeconds;
 
-            await documentClient.CreateDocumentCollectionIfNotExistsAsync(
+            ResourceResponse<DocumentCollection> collection = await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 instanceCollection,
                 new RequestOptions { OfferThroughput = 10000 });
+            
 
             var historyCollection = new DocumentCollection()
             {
                 Id = this.historyCollectionName,
             };
 
-            historyCollection.PartitionKey.Paths.Add("/id");
+            historyCollection.PartitionKey.Paths.Add("/instanceId");
             historyCollection.IndexingPolicy.Automatic = false;
             historyCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
             historyCollection.IndexingPolicy.IncludedPaths.Clear();
             historyCollection.IndexingPolicy.ExcludedPaths.Clear();
             //historyCollection.DefaultTimeToLive = (int)TimeSpan.FromDays(30).TotalSeconds;
 
-            await documentClient.CreateDocumentCollectionIfNotExistsAsync(
+            collection = await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 historyCollection,
                 new RequestOptions { OfferThroughput = 10000 });            
