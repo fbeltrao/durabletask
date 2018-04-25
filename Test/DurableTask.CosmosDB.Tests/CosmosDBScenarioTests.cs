@@ -14,6 +14,7 @@
 namespace DurableTask.CosmosDB.Tests
 {
     using System;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Runtime.Serialization;
@@ -126,7 +127,7 @@ namespace DurableTask.CosmosDB.Tests
 
                 // Need to wait for the instance to start before sending events to it.
                 // TODO: This requirement may not be ideal and should be revisited.
-                await client.WaitForStartupAsync(TimeSpan.FromSeconds(100));
+                await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
 
                 // Perform some operations
                 await client.RaiseEventAsync("operation", "incr");
@@ -416,6 +417,7 @@ namespace DurableTask.CosmosDB.Tests
 
                 public override async Task<int> RunTask(OrchestrationContext context, int currentValue)
                 {
+                    System.Diagnostics.Trace.WriteLine($"InstanceId: {context.OrchestrationInstance.InstanceId}, ExecutionId: {context.OrchestrationInstance.ExecutionId}");
                     string operation = await this.WaitForOperation();
 
                     bool done = false;
@@ -442,14 +444,24 @@ namespace DurableTask.CosmosDB.Tests
 
                 async Task<string> WaitForOperation()
                 {
-                    this.waitForOperationHandle = new TaskCompletionSource<string>();
-                    string operation = await this.waitForOperationHandle.Task;
-                    this.waitForOperationHandle = null;
+                    string operation = null;
+                    try
+                    {
+                        this.waitForOperationHandle = new TaskCompletionSource<string>();
+                        operation = await this.waitForOperationHandle.Task;
+                        this.waitForOperationHandle = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Trace.WriteLine(ex.ToString());
+                    }
+
                     return operation;
                 }
 
                 public override void OnEvent(OrchestrationContext context, string name, string input)
                 {
+                    Trace.WriteLine($"OnEvent Name: {name}, input: {input}");
                     Assert.AreEqual("operation", name, true, "Unknown signal recieved...");
                     if (this.waitForOperationHandle != null)
                     {
