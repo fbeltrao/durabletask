@@ -27,6 +27,7 @@ namespace DurableTask.CosmosDB
     using System.Threading;
     using System.Threading.Tasks;
     using Microsoft.Azure.Documents.Linq;
+    using DurableTask.CosmosDB.Tracking;
 
     /// <summary>
     /// Fully functional in-proc orchestration service for testing
@@ -61,10 +62,23 @@ namespace DurableTask.CosmosDB
 
         ConcurrentDictionary<string, TaskCompletionSource<OrchestrationState>> orchestrationWaiters;
 
+        readonly ITrackingStore trackingStore;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CosmosDBOrchestrationService"/> class.
+        /// </summary>
+        /// <param name="settings">The settings used to configure the orchestration service.</param>
+        public CosmosDBOrchestrationService(CosmosDBOrchestrationServiceSettings settings) : this(settings, null)
+        {
+
+        }
+
         /// <summary>
         ///     Creates a new instance of the LocalOrchestrationService with default settings
         /// </summary>
-        public CosmosDBOrchestrationService(CosmosDBOrchestrationServiceSettings settings)
+        /// <param name="settings">The settings used to configure the orchestration service.</param>
+        /// <param name="customInstanceStore">Custom UserDefined Instance store to be used with the AzureStorageOrchestrationService</param>
+        public CosmosDBOrchestrationService(CosmosDBOrchestrationServiceSettings settings, IOrchestrationServiceInstanceStore customInstanceStore)
         {
             this.orchestratorQueue = new PeekLockSessionQueue();
             this.workerQueue = new PeeklockQueue();
@@ -86,7 +100,14 @@ namespace DurableTask.CosmosDB
 
             this.documentClient = new DocumentClient(new Uri(this.cosmosDBEndpoint), this.cosmosDBAuthKey);
 
-
+            if (customInstanceStore == null)
+            {
+                this.trackingStore = new CosmosDbTrackingStore(this.cosmosDBEndpoint, this.cosmosDBAuthKey, this.instancesCollectionName, this.historyCollectionName, DatabaseName);
+            }
+            else
+            {
+                this.trackingStore = new InstanceStoreBackedTrackingStore(customInstanceStore);
+            }
 
             this.orchestrationWaiters = new ConcurrentDictionary<string, TaskCompletionSource<OrchestrationState>>();
             this.cancellationTokenSource = new CancellationTokenSource();
@@ -139,45 +160,8 @@ namespace DurableTask.CosmosDB
         /// <inheritdoc />
         public async Task CreateAsync(bool recreateInstanceStore)
         {
+            await this.trackingStore.CreateAsync();
 
-            var instanceCollection = new DocumentCollection()
-            {
-                Id = this.instancesCollectionName,
-            };
-
-            instanceCollection.PartitionKey.Paths.Add("/instanceId");
-            //instanceCollection.IndexingPolicy.Automatic = false;
-            //     instanceCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
-            //instanceCollection.IndexingPolicy.IncludedPaths.Clear();
-            //instanceCollection.IndexingPolicy.ExcludedPaths.Clear();
-            // instanceCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "executions" });
-            //instanceCollection.DefaultTimeToLive = (int)TimeSpan.FromDays(30).TotalSeconds;
-
-            ResourceResponse<DocumentCollection> collection = await documentClient.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseName),
-                instanceCollection,
-                new RequestOptions { OfferThroughput = 10000 });
-
-
-            var historyCollection = new DocumentCollection()
-            {
-                Id = this.historyCollectionName,
-            };
-
-            historyCollection.PartitionKey.Paths.Add("/instanceId");
-            //historyCollection.IndexingPolicy.Automatic = false;
-            //historyCollection.IndexingPolicy.IndexingMode = IndexingMode.None;
-            //historyCollection.IndexingPolicy.IncludedPaths.Clear();
-            //historyCollection.IndexingPolicy.ExcludedPaths.Clear();
-            //instanceCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "/executions" });
-            //historyCollection.DefaultTimeToLive = (int)TimeSpan.FromDays(30).TotalSeconds;
-
-            collection = await documentClient.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseName),
-                historyCollection,
-                new RequestOptions { OfferThroughput = 10000 });
-
-          
             var queueSettings = new CosmosDBQueueSettings
             {
                 QueueCollectionDefinition = new CosmosDBCollectionDefinition
@@ -206,9 +190,14 @@ namespace DurableTask.CosmosDB
         }
 
         /// <inheritdoc />
-        public Task DeleteAsync(bool deleteInstanceStore)
+        public async Task DeleteAsync(bool deleteInstanceStore)
         {
-            return Task.FromResult<object>(null);
+            if (deleteInstanceStore)
+            {
+                await this.trackingStore.DeleteAsync();
+            }
+
+            // TODO
         }
 
         /// <inheritdoc />
@@ -241,71 +230,74 @@ namespace DurableTask.CosmosDB
         // client methods
         /******************************/
         /// <inheritdoc />
-        public async Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
+        public Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
         {
-            ExecutionStartedEvent ee = creationMessage.Event as ExecutionStartedEvent;
+            return this.SendTaskOrchestrationMessageAsync(creationMessage);
+            //ExecutionStartedEvent ee = creationMessage.Event as ExecutionStartedEvent;
 
-            if (ee == null)
-            {
-                throw new InvalidOperationException("Invalid creation task message");
-            }
+            //if (ee == null)
+            //{
+            //    throw new InvalidOperationException("Invalid creation task message");
+            //}
 
-            await thisLock.WaitAsync();
-            try
-            {
-                this.orchestratorQueue.SendMessage(creationMessage);
+            //await thisLock.WaitAsync();
+            //try
+            //{
+            //    this.orchestratorQueue.SendMessage(creationMessage);
 
-                var stateDocument = await GetOrchestrationState(creationMessage.OrchestrationInstance.InstanceId);
+            //    var stateDocument = await GetOrchestrationState(creationMessage.OrchestrationInstance.InstanceId);
 
-                OrchestrationState newState = new OrchestrationState()
-                {
-                    OrchestrationInstance = new OrchestrationInstance
-                    {
-                        InstanceId = creationMessage.OrchestrationInstance.InstanceId,
-                        ExecutionId = creationMessage.OrchestrationInstance.ExecutionId,
-                    },
-                    CreatedTime = DateTime.UtcNow,
-                    OrchestrationStatus = OrchestrationStatus.Pending,
-                    Version = ee.Version,
-                    Name = ee.Name,
-                    Input = ee.Input,
-                };
+            //    OrchestrationState newState = new OrchestrationState()
+            //    {
+            //        OrchestrationInstance = new OrchestrationInstance
+            //        {
+            //            InstanceId = creationMessage.OrchestrationInstance.InstanceId,
+            //            ExecutionId = creationMessage.OrchestrationInstance.ExecutionId,
+            //        },
+            //        CreatedTime = DateTime.UtcNow,
+            //        OrchestrationStatus = OrchestrationStatus.Pending,
+            //        Version = ee.Version,
+            //        Name = ee.Name,
+            //        Input = ee.Input,
+            //    };
 
 
-                if (stateDocument == null)
-                {
-                    stateDocument = new OrchestrationStateDocument()
-                    {
-                        InstanceId = creationMessage.OrchestrationInstance.InstanceId
-                    };
-                    stateDocument.Executions = new Dictionary<string, OrchestrationState>();
-                }
+            //    if (stateDocument == null)
+            //    {
+            //        stateDocument = new OrchestrationStateDocument()
+            //        {
+            //            InstanceId = creationMessage.OrchestrationInstance.InstanceId
+            //        };
+            //        stateDocument.Executions = new Dictionary<string, OrchestrationState>();
+            //    }
 
-                newState.LastUpdatedTime = DateTime.UtcNow;
-                stateDocument.Executions[newState.OrchestrationInstance.ExecutionId] = newState;
-                ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
-            }
-            finally
-            {
-                thisLock.Release();
-            }
+            //    newState.LastUpdatedTime = DateTime.UtcNow;
+            //    stateDocument.Executions[newState.OrchestrationInstance.ExecutionId] = newState;
+            //    ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
+            //}
+            //finally
+            //{
+            //    thisLock.Release();
+            //}
         }
 
         /// <inheritdoc />
-        public Task SendTaskOrchestrationMessageAsync(TaskMessage message)
+        public async Task SendTaskOrchestrationMessageAsync(TaskMessage message)
         {
-            return SendTaskOrchestrationMessageBatchAsync(message);
+            ExecutionStartedEvent executionStartedEvent = message.Event as ExecutionStartedEvent;
+            if (executionStartedEvent == null)
+            {
+                return;
+            }
+
+            await this.trackingStore.SetNewExecutionAsync(executionStartedEvent);
+
         }
 
         /// <inheritdoc />
         public Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages)
         {
-            foreach (var message in messages)
-            {
-                this.orchestratorQueue.SendMessage(message);
-            }
-
-            return Task.FromResult<object>(null);
+            return Task.WhenAll(messages.Select(msg => this.SendTaskOrchestrationMessageAsync(msg)));
         }
 
         /// <inheritdoc />
@@ -449,64 +441,27 @@ namespace DurableTask.CosmosDB
         }
 
         /// <inheritdoc />
-        public async Task<OrchestrationState> GetOrchestrationStateAsync(string instanceId, string executionId)
+        public Task<OrchestrationState> GetOrchestrationStateAsync(string instanceId, string executionId)
         {
-            OrchestrationState response = null;
-
-            await this.thisLock.WaitAsync();
-            try
-            {
-                var d = await GetOrchestrationState(instanceId);
-                if (d != null)
-                {
-                    d.Executions.TryGetValue(executionId, out response);
-                }
-            }
-            finally
-            {
-
-                this.thisLock.Release();
-            }
-
-
-            return response;
+            return this.trackingStore.GetStateAsync(instanceId, executionId);
         }
 
         /// <inheritdoc />
-        public async Task<IList<OrchestrationState>> GetOrchestrationStateAsync(string instanceId, bool allExecutions)
+        public Task<IList<OrchestrationState>> GetOrchestrationStateAsync(string instanceId, bool allExecutions)
         {
-            IList<OrchestrationState> response = null;
-
-
-            await this.thisLock.WaitAsync();
-            try
-            {
-                var d = await GetOrchestrationState(instanceId);
-                if (d != null)
-                {
-                    response = d.Executions.Values.ToList();
-                }
-            }
-            finally
-            {
-
-                this.thisLock.Release();
-            }
-
-
-            return response;
+            return this.trackingStore.GetStateAsync(instanceId, allExecutions);
         }
 
         /// <inheritdoc />
-        public Task<string> GetOrchestrationHistoryAsync(string instanceId, string executionId)
+        public async Task<OrchestrationState> GetOrchestrationHistoryAsync(string instanceId, string executionId)
         {
-            throw new NotImplementedException();
+            return await this.trackingStore.GetStateAsync(instanceId, executionId);
         }
 
         /// <inheritdoc />
         public Task PurgeOrchestrationHistoryAsync(DateTime thresholdDateTimeUtc, OrchestrationStateTimeRangeFilterType timeRangeFilterType)
         {
-            throw new NotImplementedException();
+            return this.trackingStore.PurgeHistoryAsync(thresholdDateTimeUtc, timeRangeFilterType);
         }
 
         /******************************/
@@ -601,9 +556,10 @@ namespace DurableTask.CosmosDB
 
                     }
 
-                    state.LastUpdatedTime = DateTime.UtcNow;                    
+                    state.LastUpdatedTime = DateTime.UtcNow;
                     doc.Executions[workItem.OrchestrationRuntimeState.OrchestrationInstance.ExecutionId] = state;
                     doc.SetPropertyValue("executions", doc.Executions);
+                    await this.trackingStore.UpdateStateAsync(workItem.OrchestrationRuntimeState, workItem.InstanceId, state.OrchestrationInstance.ExecutionId);
                     await UpsertOrchestrationState(doc);
 
                     // signal any waiters waiting on instanceid_executionid or just the latest instanceid_
@@ -804,6 +760,11 @@ namespace DurableTask.CosmosDB
                 this.cancellationTokenSource.Cancel();
                 this.cancellationTokenSource.Dispose();
             }
+        }
+
+        Task<string> IOrchestrationServiceClient.GetOrchestrationHistoryAsync(string instanceId, string executionId)
+        {
+            throw new NotImplementedException();
         }
     }
 }
