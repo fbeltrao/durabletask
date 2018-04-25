@@ -22,6 +22,13 @@ namespace DurableTask.Core.History
     public class TaskScheduledEvent : HistoryEvent
     {
         /// <summary>
+        /// Constructor
+        /// </summary>
+        public TaskScheduledEvent():base(0)
+        {
+
+        }
+        /// <summary>
         /// Creates a new TaskScheduledEvent with the supplied event id
         /// </summary>
         /// <param name="eventId">The event id of the history event</param>
