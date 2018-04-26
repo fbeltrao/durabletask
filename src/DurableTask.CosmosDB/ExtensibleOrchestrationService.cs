@@ -36,7 +36,7 @@ namespace DurableTask.AzureStorage
     /// <summary>
     /// Orchestration service provider for the Durable Task Framework which uses Azure Storage as the durable store.
     /// </summary>
-    public class AzureStorageOrchestrationService :
+    public class ExtensibleOrchestrationService :
         IOrchestrationService,
         IOrchestrationServiceClient,
         IPartitionObserver<BlobLease>
@@ -45,7 +45,7 @@ namespace DurableTask.AzureStorage
 
         static readonly HistoryEvent[] EmptyHistoryEventList = new HistoryEvent[0];
 
-        readonly AzureStorageOrchestrationServiceSettings settings;
+        readonly ExtensibleOrchestrationServiceSettings settings;
         readonly AzureStorageOrchestrationServiceStats stats;
         readonly string storageAccountName;
         readonly CloudQueueClient queueClient;
@@ -75,18 +75,18 @@ namespace DurableTask.AzureStorage
         CancellationTokenSource shutdownSource;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="AzureStorageOrchestrationService"/> class.
+        /// Initializes a new instance of the <see cref="ExtensibleOrchestrationService"/> class.
         /// </summary>
         /// <param name="settings">The settings used to configure the orchestration service.</param>
-        public AzureStorageOrchestrationService(AzureStorageOrchestrationServiceSettings settings) : this(settings, null)
+        public ExtensibleOrchestrationService(ExtensibleOrchestrationServiceSettings settings) : this(settings, null)
         { }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="AzureStorageOrchestrationService"/> class with a custom instance store.
+        /// Initializes a new instance of the <see cref="ExtensibleOrchestrationService"/> class with a custom instance store.
         /// </summary>
         /// <param name="settings">The settings used to configure the orchestration service.</param>
         /// <param name="customInstanceStore">Custom UserDefined Instance store to be used with the AzureStorageOrchestrationService</param>
-        public AzureStorageOrchestrationService(AzureStorageOrchestrationServiceSettings settings, IOrchestrationServiceInstanceStore customInstanceStore)
+        public ExtensibleOrchestrationService(ExtensibleOrchestrationServiceSettings settings, IOrchestrationServiceInstanceStore customInstanceStore)
         {
             if (settings == null)
             {
@@ -123,7 +123,7 @@ namespace DurableTask.AzureStorage
 
             if (customInstanceStore == null)
             {
-                this.trackingStore = new CosmosDbTrackingStore(settings.TaskHubName, settings.StorageConnectionString, null, null, null);
+                this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
             }
             else
             {
@@ -237,7 +237,7 @@ namespace DurableTask.AzureStorage
                 stats: stats);
         }
 
-        static void ValidateSettings(AzureStorageOrchestrationServiceSettings settings)
+        static void ValidateSettings(ExtensibleOrchestrationServiceSettings settings)
         {
             if (settings.ControlQueueBatchSize > 32)
             {

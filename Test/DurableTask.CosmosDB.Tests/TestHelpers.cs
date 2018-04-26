@@ -5,56 +5,37 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DurableTask.CosmosDB.Tests
+namespace DurableTask.AzureStorage.Tests
 {
     static class TestHelpers
     {
-
-        public static CosmosDBOrchestrationService GetAndCreateCosmosDBOrchestrationService()
+        public static TestOrchestrationHost GetTestOrchestrationHost()
         {
-            string cosmosEndpoint = GetTestCosmosDBEndpoint();
-            var cosmosAuthKey = GetTestCosmosDBAuthKey();
+            string storageConnectionString = GetTestStorageAccountConnectionString();
 
-            var service = new CosmosDBOrchestrationService(
-               new CosmosDBOrchestrationServiceSettings
-               {
-                   CosmosDBEndpoint = cosmosEndpoint,
-                   CosmosDBAuthKey = cosmosAuthKey,
-                   TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),
-               });
+            var service = new ExtensibleOrchestrationService(
+                new ExtensibleOrchestrationServiceSettings
+                {
+                    StorageConnectionString = storageConnectionString,
+                    TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),
+                    CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                    CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
+                });
 
             service.CreateAsync().GetAwaiter().GetResult();
 
-            return service;
+            return new TestOrchestrationHost(service);
         }
 
-        public static TestOrchestrationHost GetTestOrchestrationHost()
+        public static string GetTestStorageAccountConnectionString()
         {
-            var orchService = GetAndCreateCosmosDBOrchestrationService();
-
-            return new TestOrchestrationHost(orchService);
-        }
-
-        public static string GetTestCosmosDBEndpoint()
-        {
-            string endpoint = GetTestSetting("CosmosDBEndpoint");
-            if (string.IsNullOrEmpty(endpoint))
+            string storageConnectionString = GetTestSetting("StorageConnectionString");
+            if (string.IsNullOrEmpty(storageConnectionString))
             {
-                throw new ArgumentNullException("A CosmosDB endpoint must be defined in either an environment variable or in configuration.");
+                throw new ArgumentNullException("A Storage connection string must be defined in either an environment variable or in configuration.");
             }
 
-            return endpoint;
-        }
-
-        public static string GetTestCosmosDBAuthKey()
-        {
-            string authKey = GetTestSetting("CosmosDBAuthKey");
-            if (string.IsNullOrEmpty(authKey))
-            {
-                throw new ArgumentNullException("A CosmosDB authorization key must be defined in either an environment variable or in configuration.");
-            }
-
-            return authKey;
+            return storageConnectionString;
         }
 
         static string GetTestSetting(string name)

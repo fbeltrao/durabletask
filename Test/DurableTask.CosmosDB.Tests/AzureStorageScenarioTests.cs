@@ -11,21 +11,26 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.CosmosDB.Tests
+namespace DurableTask.AzureStorage.Tests
 {
     using System;
-    using System.Diagnostics;
+    using System.Collections.Generic;
     using System.IO;
     using System.Linq;
     using System.Runtime.Serialization;
+    using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
     using DurableTask.Core;
+    using DurableTask.Core.Exceptions;
+    using Microsoft.Practices.EnterpriseLibrary.SemanticLogging.Utility;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
+    using Microsoft.WindowsAzure.Storage;
+    using Microsoft.WindowsAzure.Storage.Table;
     using Newtonsoft.Json.Linq;
 
     [TestClass]
-    public class CosmosDBScenarioTests
+    public class AzureStorageScenarioTests
     {
         /// <summary>
         /// End-to-end test which validates a simple orchestrator function which doesn't call any activity functions.
@@ -136,19 +141,14 @@ namespace DurableTask.CosmosDB.Tests
                 //       are processed by the same instance at the same time, resulting in a corrupt
                 //       storage failure in DTFx.
                 await Task.Delay(2000);
-                var s1 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "incr");
                 await Task.Delay(2000);
-                var s2 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "incr");
                 await Task.Delay(2000);
-                var s3 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "decr");
                 await Task.Delay(2000);
-                var s4 = await client.GetStatusAsync();
                 await client.RaiseEventAsync("operation", "incr");
                 await Task.Delay(2000);
-                var s5 = await client.GetStatusAsync();
 
                 // Make sure it's still running and didn't complete early (or fail).
                 var status = await client.GetStatusAsync();
@@ -352,14 +352,307 @@ namespace DurableTask.CosmosDB.Tests
             }
         }
 
-        ///// <summary>
-        ///// Test which validates the ETW event source.
-        ///// </summary>
-        //[TestMethod]
-        //public void ValidateEventSource()
-        //{
-        //    EventSourceAnalyzer.InspectAll(AnalyticsEventSource.Log);
-        //}
+        /// <summary>
+        /// Fan-out/fan-in test which ensures each operation is run only once.
+        /// </summary>
+        [TestMethod]
+        public async Task FanOutToTableStorage()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                int iterations = 100;
+
+                var client = await host.StartOrchestrationAsync(typeof(Orchestrations.MapReduceTableStorage), iterations);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(120));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual(iterations, int.Parse(status?.Output));
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// Test which validates the ETW event source.
+        /// </summary>
+        [TestMethod]
+        public void ValidateEventSource()
+        {
+            EventSourceAnalyzer.InspectAll(AnalyticsEventSource.Log);
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that orchestrations with <=60KB text message sizes can run successfully.
+        /// </summary>
+        [TestMethod]
+        public async Task SmallTextMessagePayloads()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                // Generate a small random string payload
+                const int TargetPayloadSize = 1 * 1024; // 1 KB
+                const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 {}/<>.-";
+                var sb = new StringBuilder();
+                var random = new Random();
+                while (Encoding.Unicode.GetByteCount(sb.ToString()) < TargetPayloadSize)
+                {
+                    for (int i = 0; i < 1000; i++)
+                    {
+                        sb.Append(Chars[random.Next(Chars.Length)]);
+                    }
+                }
+
+                string message = sb.ToString();
+                var client = await host.StartOrchestrationAsync(typeof(Orchestrations.Echo), message);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(60));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual(message, JToken.Parse(status?.Output));
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that orchestrations with > 60KB text message sizes can run successfully.
+        /// </summary>
+        [TestMethod]
+        public async Task LargeTextMessagePayloads()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                // Generate a medium random string payload
+                const int TargetPayloadSize = 128 * 1024; // 128 KB
+                const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 {}/<>.-";
+                var sb = new StringBuilder();
+                var random = new Random();
+                while (Encoding.Unicode.GetByteCount(sb.ToString()) < TargetPayloadSize)
+                {
+                    for (int i = 0; i < 1000; i++)
+                    {
+                        sb.Append(Chars[random.Next(Chars.Length)]);
+                    }
+                }
+
+                string message = sb.ToString();
+                var client = await host.StartOrchestrationAsync(typeof(Orchestrations.Echo), message);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromMinutes(2));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual(message, JToken.Parse(status?.Output));
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that orchestrations with > 60KB binary bytes message sizes can run successfully.
+        /// </summary>
+        [TestMethod]
+        public async Task LargeBinaryByteMessagePayloads()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                // Construct byte array from large binary file of size 826KB
+                string originalFileName = "large.jpeg";
+                string currentDirectory = Directory.GetCurrentDirectory();
+                string originalFilePath = Path.Combine(currentDirectory, originalFileName);
+                byte[] readBytes = File.ReadAllBytes(originalFilePath);
+                
+                var client = await host.StartOrchestrationAsync(typeof(Orchestrations.EchoBytes), readBytes);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromMinutes(1));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+
+                byte[] outputBytes = JToken.Parse(status?.Output).ToObject<byte[]>();
+                Assert.IsTrue(readBytes.SequenceEqual(outputBytes), "Original message byte array and returned messages byte array are not equal");
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that orchestrations with > 60KB binary string message sizes can run successfully.
+        /// </summary>
+        [TestMethod]
+        public async Task LargeBinaryStringMessagePayloads()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                // Construct string message from large binary file of size 826KB
+                string originalFileName = "large.jpeg";
+                string currentDirectory = Directory.GetCurrentDirectory();
+                string originalFilePath = Path.Combine(currentDirectory, originalFileName);
+                byte[] readBytes = File.ReadAllBytes(originalFilePath);
+                string message = Convert.ToBase64String(readBytes);
+
+                var client = await host.StartOrchestrationAsync(typeof(Orchestrations.Echo), message);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromMinutes(1));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual(message, JToken.Parse(status?.Output));
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that a completed singleton instance can be recreated.
+        /// </summary>
+        [TestMethod]
+        public async Task RecreateCompletedInstance()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                string singletonInstanceId = $"HelloSingleton_{Guid.NewGuid():N}";
+
+                var client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.SayHelloWithActivity),
+                    input: "One",
+                    instanceId: singletonInstanceId);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(30));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual("One", JToken.Parse(status?.Input));
+                Assert.AreEqual("Hello, One!", JToken.Parse(status?.Output));
+
+                client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.SayHelloWithActivity),
+                    input: "Two",
+                    instanceId: singletonInstanceId);
+                status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(30));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual("Two", JToken.Parse(status?.Input));
+                Assert.AreEqual("Hello, Two!", JToken.Parse(status?.Output));
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that a failed singleton instance can be recreated.
+        /// </summary>
+        [TestMethod]
+        public async Task RecreateFailedInstance()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                string singletonInstanceId = $"HelloSingleton_{Guid.NewGuid():N}";
+
+                var client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.SayHelloWithActivity),
+                    input: null, // this will cause the orchestration to fail
+                    instanceId: singletonInstanceId);
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(30));
+
+                Assert.AreEqual(OrchestrationStatus.Failed, status?.OrchestrationStatus);
+
+                client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.SayHelloWithActivity),
+                    input: "NotNull",
+                    instanceId: singletonInstanceId);
+                status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(30));
+
+                Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+                Assert.AreEqual("Hello, NotNull!", JToken.Parse(status?.Output));
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that a terminated orchestration can be recreated.
+        /// </summary>
+        [TestMethod]
+        public async Task RecreateTerminatedInstance()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                string singletonInstanceId = $"SingletonCounter_{Guid.NewGuid():N}";
+
+                // Using the counter orchestration because it will wait indefinitely for input.
+                var client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.Counter),
+                    input: -1,
+                    instanceId: singletonInstanceId);
+
+                // Need to wait for the instance to start before we can terminate it.
+                await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
+
+                await client.TerminateAsync("sayōnara");
+
+                var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
+
+                Assert.AreEqual(OrchestrationStatus.Terminated, status?.OrchestrationStatus);
+                Assert.AreEqual("-1", status?.Input);
+                Assert.AreEqual("sayōnara", status?.Output);
+
+                client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.Counter),
+                    input: 0,
+                    instanceId: singletonInstanceId);
+                status = await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
+
+                Assert.AreEqual(OrchestrationStatus.Running, status?.OrchestrationStatus);
+                Assert.AreEqual("0", status?.Input);
+
+                await host.StopAsync();
+            }
+        }
+
+        /// <summary>
+        /// End-to-end test which validates that a running orchestration can be recreated.
+        /// </summary>
+        [TestMethod]
+        public async Task TryRecreateRunningInstance()
+        {
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            {
+                await host.StartAsync();
+
+                string singletonInstanceId = $"SingletonCounter_{DateTime.Now:o}";
+
+                // Using the counter orchestration because it will wait indefinitely for input.
+                var client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.Counter),
+                    input: 0,
+                    instanceId: singletonInstanceId);
+
+                var status = await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
+
+                Assert.AreEqual(OrchestrationStatus.Running, status?.OrchestrationStatus);
+                Assert.AreEqual("0", status?.Input);
+                Assert.AreEqual(null, status?.Output);
+
+                client = await host.StartOrchestrationAsync(
+                    typeof(Orchestrations.Counter),
+                    input: 99,
+                    instanceId: singletonInstanceId);
+                status = await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
+
+                Assert.AreEqual(OrchestrationStatus.Running, status?.OrchestrationStatus);
+                Assert.AreEqual("99", status?.Input);
+
+                await host.StopAsync();
+            }
+        }
 
         static class Orchestrations
         {
@@ -422,7 +715,6 @@ namespace DurableTask.CosmosDB.Tests
 
                 public override async Task<int> RunTask(OrchestrationContext context, int currentValue)
                 {
-                    System.Diagnostics.Trace.WriteLine($"InstanceId: {context.OrchestrationInstance.InstanceId}, ExecutionId: {context.OrchestrationInstance.ExecutionId}");
                     string operation = await this.WaitForOperation();
 
                     bool done = false;
@@ -449,24 +741,14 @@ namespace DurableTask.CosmosDB.Tests
 
                 async Task<string> WaitForOperation()
                 {
-                    string operation = null;
-                    try
-                    {
-                        this.waitForOperationHandle = new TaskCompletionSource<string>();
-                        operation = await this.waitForOperationHandle.Task;
-                        this.waitForOperationHandle = null;
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Trace.WriteLine(ex.ToString());
-                    }
-
+                    this.waitForOperationHandle = new TaskCompletionSource<string>();
+                    string operation = await this.waitForOperationHandle.Task;
+                    this.waitForOperationHandle = null;
                     return operation;
                 }
 
                 public override void OnEvent(OrchestrationContext context, string name, string input)
                 {
-                    Trace.WriteLine($"OnEvent Name: {name}, input: {input}");
                     Assert.AreEqual("operation", name, true, "Unknown signal recieved...");
                     if (this.waitForOperationHandle != null)
                     {
@@ -551,13 +833,53 @@ namespace DurableTask.CosmosDB.Tests
                         {
                             await context.ScheduleTask<string>(typeof(Activities.Throw), "Kah-BOOOOOM!!!");
                         }
-                        catch
+                        catch (TaskFailedException)
                         {
                             catchCount++;
                         }
                     }
 
                     return catchCount;
+                }
+            }
+
+            [KnownType(typeof(Activities.Echo))]
+            internal class Echo : TaskOrchestration<string, string>
+            {
+                public override Task<string> RunTask(OrchestrationContext context, string input)
+                {
+                    return context.ScheduleTask<string>(typeof(Activities.Echo), input);
+                }
+            }
+
+            [KnownType(typeof(Activities.EchoBytes))]
+            internal class EchoBytes : TaskOrchestration<byte[], byte[]>
+            {
+                public override Task<byte[]> RunTask(OrchestrationContext context, byte[] input)
+                {
+                    return context.ScheduleTask<byte[]>(typeof(Activities.EchoBytes), input);
+                }
+            }
+
+            [KnownType(typeof(Activities.WriteTableRow))]
+            [KnownType(typeof(Activities.CountTableRows))]
+            internal class MapReduceTableStorage : TaskOrchestration<int, int>
+            {
+                public override async Task<int> RunTask(OrchestrationContext context, int iterations)
+                {
+                    string instanceId = context.OrchestrationInstance.InstanceId;
+
+                    var tasks = new List<Task>(iterations);
+                    for (int i = 1; i <= iterations; i++)
+                    {
+                        tasks.Add(context.ScheduleTask<string>(
+                            typeof(Activities.WriteTableRow),
+                            new Tuple<string, string>(instanceId, i.ToString("000"))));
+                    }
+
+                    await Task.WhenAll(tasks);
+
+                    return await context.ScheduleTask<int>(typeof(Activities.CountTableRows), instanceId);
                 }
             }
         }
@@ -568,6 +890,11 @@ namespace DurableTask.CosmosDB.Tests
             {
                 protected override string Execute(TaskContext context, string input)
                 {
+                    if (string.IsNullOrEmpty(input))
+                    {
+                        throw new ArgumentNullException(nameof(input));
+                    }
+
                     return $"Hello, {input}!";
                 }
             }
@@ -602,6 +929,65 @@ namespace DurableTask.CosmosDB.Tests
                 protected override string Execute(TaskContext context, string message)
                 {
                     throw new Exception(message);
+                }
+            }
+
+            internal class WriteTableRow : TaskActivity<Tuple<string, string>, string>
+            {
+                static CloudTable cachedTable;
+
+                internal static CloudTable TestCloudTable
+                {
+                    get
+                    {
+                        if (cachedTable == null)
+                        {
+                            string connectionString = TestHelpers.GetTestStorageAccountConnectionString();
+                            CloudTable table = CloudStorageAccount.Parse(connectionString).CreateCloudTableClient().GetTableReference("TestTable");
+                            table.CreateIfNotExists();
+                            cachedTable = table;
+                        }
+
+                        return cachedTable;
+                    }
+                }
+
+                protected override string Execute(TaskContext context, Tuple<string, string> rowData)
+                {
+                    var entity = new DynamicTableEntity(
+                        partitionKey: rowData.Item1,
+                        rowKey: $"{rowData.Item2}.{Guid.NewGuid():N}");
+                    TestCloudTable.Execute(TableOperation.Insert(entity));
+                    return null;
+                }
+            }
+
+            internal class CountTableRows : TaskActivity<string, int>
+            {
+                protected override int Execute(TaskContext context, string partitionKey)
+                {
+                    var query = new TableQuery<DynamicTableEntity>().Where(
+                        TableQuery.GenerateFilterCondition(
+                            "PartitionKey",
+                            QueryComparisons.Equal,
+                            partitionKey));
+
+                    return WriteTableRow.TestCloudTable.ExecuteQuery(query).Count();
+                }
+            }
+            internal class Echo : TaskActivity<string, string>
+            {
+                protected override string Execute(TaskContext context, string input)
+                {
+                    return input;
+                }
+            }
+
+            internal class EchoBytes : TaskActivity<byte[], byte[]>
+            {
+                protected override byte[] Execute(TaskContext context, byte[] input)
+                {
+                    return input;
                 }
             }
         }

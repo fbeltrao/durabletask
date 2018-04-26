@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.CosmosDB.Tests
+namespace DurableTask.AzureStorage.Tests
 {
     using System;
     using System.Collections.Generic;
@@ -27,7 +27,7 @@ namespace DurableTask.CosmosDB.Tests
         readonly HashSet<Type> addedOrchestrationTypes;
         readonly HashSet<Type> addedActivityTypes;
 
-        public TestOrchestrationHost(CosmosDBOrchestrationService service)
+        public TestOrchestrationHost(ExtensibleOrchestrationService service)
         {
             this.worker = new TaskHubWorker(service);
             this.client = new TaskHubClient(service);
@@ -50,7 +50,10 @@ namespace DurableTask.CosmosDB.Tests
             return this.worker.StopAsync(isForced: true);
         }
 
-        public async Task<TestOrchestrationClient> StartOrchestrationAsync(Type orchestrationType, object input)
+        public async Task<TestOrchestrationClient> StartOrchestrationAsync(
+            Type orchestrationType,
+            object input,
+            string instanceId = null)
         {
             if (!this.addedOrchestrationTypes.Contains(orchestrationType))
             {
@@ -75,6 +78,7 @@ namespace DurableTask.CosmosDB.Tests
             DateTime creationTime = DateTime.UtcNow;
             OrchestrationInstance instance = await this.client.CreateOrchestrationInstanceAsync(
                 orchestrationType,
+                instanceId,
                 input);
 
             Trace.TraceInformation($"Started {orchestrationType.Name}, Instance ID = {instance.InstanceId}");

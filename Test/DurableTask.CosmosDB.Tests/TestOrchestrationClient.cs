@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.CosmosDB.Tests
+namespace DurableTask.AzureStorage.Tests
 {
     using System;
     using System.Diagnostics;
@@ -71,7 +71,7 @@ namespace DurableTask.CosmosDB.Tests
             do
             {
                 OrchestrationState state = await this.GetStatusAsync();
-                if (state != null)
+                if (state != null && state.OrchestrationStatus != OrchestrationStatus.Pending)
                 {
                     Trace.TraceInformation($"{state.Name} (ID = {state.OrchestrationInstance.InstanceId}) started successfully after ~{sw.ElapsedMilliseconds}ms. Status = {state.OrchestrationStatus}.");
                     return state;

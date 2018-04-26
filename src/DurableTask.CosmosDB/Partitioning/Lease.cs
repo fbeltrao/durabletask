@@ -42,7 +42,7 @@ namespace DurableTask.AzureStorage.Partitioning
         public string Owner { get; set; }
 
         /// <summary>Gets or sets the lease token that manages concurrency between hosts. You can use this token to guarantee single access to any resource needed by the 
-        /// <see cref="DurableTask.AzureStorage.AzureStorageOrchestrationService" /> object.</summary> 
+        /// <see cref="DurableTask.AzureStorage.ExtensibleOrchestrationService" /> object.</summary> 
         /// <value>The lease token.</value>
         public string Token { get; set; }
 

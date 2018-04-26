@@ -18,9 +18,9 @@ namespace DurableTask.AzureStorage
     using Microsoft.WindowsAzure.Storage.Table;
 
     /// <summary>
-    /// Settings that impact the runtime behavior of the <see cref="AzureStorageOrchestrationService"/>.
+    /// Settings that impact the runtime behavior of the <see cref="ExtensibleOrchestrationService"/>.
     /// </summary>
-    public class AzureStorageOrchestrationServiceSettings
+    public class ExtensibleOrchestrationServiceSettings
     {
         internal const int DefaultPartitionCount = 4;
 
@@ -112,5 +112,15 @@ namespace DurableTask.AzureStorage
         /// interval, it will cause it to expire and ownership of the partition will move to another worker instance.
         /// </summary>
         public TimeSpan LeaseInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// CosmosDB endpoint
+        /// </summary>
+        public string CosmosDBEndpoint { get; set; }
+
+        /// <summary>
+        /// CosmosDB authorization key
+        /// </summary>
+        public string CosmosDBAuthKey { get; set; }
     }
 }

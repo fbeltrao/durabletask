@@ -33,6 +33,8 @@ namespace DurableTask.CosmosDB.Tracking
         private string historyCollectionName;
         private string DatabaseName;
 
+        public Microsoft.WindowsAzure.Storage.Table.CloudTable HistoryTable { get; internal set; }
+
         public CosmosDbTrackingStore(string endpoint, string key, string instanceCollection, string historyCollection, string databaseName)
         {
             this.documentClient = new DocumentClient(new Uri(endpoint), key);
