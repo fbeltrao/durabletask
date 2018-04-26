@@ -87,12 +87,29 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task<IList<OrchestrationState>> GetStateAsync(string instanceId, bool allExecutions)
         {
-            return (await GetDocumentStateAsync(instanceId)).Executions.Values.ToList();
+            List<OrchestrationState> result = new List<OrchestrationState>();
+
+            OrchestrationStateDocument document = await GetDocumentStateAsync(instanceId);
+            if (document != null)
+            {
+                result = document.Executions.Values.ToList();
+            }
+
+            return result;
+
         }
 
         public override async Task<OrchestrationState> GetStateAsync(string instanceId, string executionId)
         {
-            return (await GetDocumentStateAsync(instanceId)).Executions[executionId];
+            OrchestrationState result = null;
+
+            OrchestrationStateDocument document = await GetDocumentStateAsync(instanceId);
+            if (document != null && document.Executions.ContainsKey(executionId))
+            {
+                result = document.Executions[executionId];
+            }
+
+            return result;
         }
 
         private async Task<OrchestrationStateDocument> GetDocumentStateAsync(string instanceId)
@@ -141,6 +158,49 @@ namespace DurableTask.CosmosDB.Tracking
             document.SetPropertyValue("history", document.History);
 
             await SaveHistoryDocument(document);
+            await SaveExecutionInstance(executionStartedEvent);
+        }
+
+        private async Task SaveExecutionInstance(ExecutionStartedEvent executionStartedEvent)
+        {
+            var stateDocument = await GetDocumentStateAsync(executionStartedEvent.OrchestrationInstance.InstanceId);
+
+            OrchestrationState newState = new OrchestrationState()
+            {
+                OrchestrationInstance = new OrchestrationInstance
+                {
+                    InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId,
+                    ExecutionId = executionStartedEvent.OrchestrationInstance.ExecutionId,
+                },
+                CreatedTime = DateTime.UtcNow,
+                OrchestrationStatus = OrchestrationStatus.Pending,
+                Version = executionStartedEvent.Version,
+                Name = executionStartedEvent.Name,
+                Input = executionStartedEvent.Input,
+            };
+
+
+            if (stateDocument == null)
+            {
+                stateDocument = new OrchestrationStateDocument()
+                {
+                    InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId
+                };
+                stateDocument.Executions = new Dictionary<string, OrchestrationState>();
+            }
+
+            newState.LastUpdatedTime = DateTime.UtcNow;
+            stateDocument.Executions[newState.OrchestrationInstance.ExecutionId] = newState;
+            ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
+        }
+
+        private async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument doc)
+        {
+            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
+            return await documentClient.UpsertDocumentAsync(documentUri, doc, new RequestOptions()
+            {
+                PartitionKey = new PartitionKey(doc.InstanceId)
+            });
         }
 
         private Task<ResourceResponse<Document>> SaveHistoryDocument(OrchestrationTrackDocument value)
@@ -182,9 +242,23 @@ namespace DurableTask.CosmosDB.Tracking
             throw new NotImplementedException();
         }
 
-        public override Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
+        public override async Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
         {
-            throw new NotImplementedException();
+            var doc = await GetDocumentStateAsync(instanceId);
+            if (doc == null)
+            {
+                doc = new OrchestrationStateDocument()
+                {
+                    InstanceId = instanceId,
+                };
+
+                doc.Executions = new Dictionary<string, OrchestrationState>();
+
+            }
+
+            //runtimeState.LastUpdatedTime = DateTime.UtcNow;
+            //doc.Executions[workItem.OrchestrationRuntimeState.OrchestrationInstance.ExecutionId] = state;
+            //doc.SetPropertyValue("executions", doc.Executions);
         }
     }
 }

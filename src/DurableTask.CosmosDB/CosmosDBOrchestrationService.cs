@@ -230,73 +230,39 @@ namespace DurableTask.CosmosDB
         // client methods
         /******************************/
         /// <inheritdoc />
-        public Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
+        public async Task CreateTaskOrchestrationAsync(TaskMessage creationMessage)
         {
-            return this.SendTaskOrchestrationMessageAsync(creationMessage);
-            //ExecutionStartedEvent ee = creationMessage.Event as ExecutionStartedEvent;
+            await thisLock.WaitAsync();
+            try
+            {
+                this.orchestratorQueue.SendMessage(creationMessage);
+            }
+            finally
+            {
+                thisLock.Release();
+            }
 
-            //if (ee == null)
-            //{
-            //    throw new InvalidOperationException("Invalid creation task message");
-            //}
-
-            //await thisLock.WaitAsync();
-            //try
-            //{
-            //    this.orchestratorQueue.SendMessage(creationMessage);
-
-            //    var stateDocument = await GetOrchestrationState(creationMessage.OrchestrationInstance.InstanceId);
-
-            //    OrchestrationState newState = new OrchestrationState()
-            //    {
-            //        OrchestrationInstance = new OrchestrationInstance
-            //        {
-            //            InstanceId = creationMessage.OrchestrationInstance.InstanceId,
-            //            ExecutionId = creationMessage.OrchestrationInstance.ExecutionId,
-            //        },
-            //        CreatedTime = DateTime.UtcNow,
-            //        OrchestrationStatus = OrchestrationStatus.Pending,
-            //        Version = ee.Version,
-            //        Name = ee.Name,
-            //        Input = ee.Input,
-            //    };
-
-
-            //    if (stateDocument == null)
-            //    {
-            //        stateDocument = new OrchestrationStateDocument()
-            //        {
-            //            InstanceId = creationMessage.OrchestrationInstance.InstanceId
-            //        };
-            //        stateDocument.Executions = new Dictionary<string, OrchestrationState>();
-            //    }
-
-            //    newState.LastUpdatedTime = DateTime.UtcNow;
-            //    stateDocument.Executions[newState.OrchestrationInstance.ExecutionId] = newState;
-            //    ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
-            //}
-            //finally
-            //{
-            //    thisLock.Release();
-            //}
+            await this.SendTaskOrchestrationMessageAsync(creationMessage);
         }
 
         /// <inheritdoc />
         public async Task SendTaskOrchestrationMessageAsync(TaskMessage message)
         {
             ExecutionStartedEvent executionStartedEvent = message.Event as ExecutionStartedEvent;
-            if (executionStartedEvent == null)
+            if (executionStartedEvent != null)
             {
-                return;
+                await this.trackingStore.SetNewExecutionAsync(executionStartedEvent);
             }
-
-            await this.trackingStore.SetNewExecutionAsync(executionStartedEvent);
-
         }
 
         /// <inheritdoc />
         public Task SendTaskOrchestrationMessageBatchAsync(params TaskMessage[] messages)
         {
+            foreach (var message in messages)
+            {
+                this.orchestratorQueue.SendMessage(message);
+            }
+
             return Task.WhenAll(messages.Select(msg => this.SendTaskOrchestrationMessageAsync(msg)));
         }
 
