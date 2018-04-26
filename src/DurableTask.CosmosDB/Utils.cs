@@ -13,6 +13,9 @@
 
 namespace DurableTask.AzureStorage
 {
+    using DurableTask.CosmosDB;
+    using Microsoft.Azure.Documents;
+    using Microsoft.Azure.Documents.Client;
     using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
@@ -32,6 +35,31 @@ namespace DurableTask.AzureStorage
             }
 
             await Task.WhenAll(tasks.ToArray());
+        }
+
+        /// <summary>
+        /// Checks whether collections exists. Creates new collection if collection does not exist 
+        /// WARNING: CreateCollectionIfNotExistsAsync will create a new 
+        /// with reserved throughput which has pricing implications. For details
+        /// visit: https://azure.microsoft.com/en-us/pricing/details/cosmos-db/
+        /// </summary>
+        /// <returns>A Task to allow asynchronous execution</returns>
+        internal static async Task CreateCollectionIfNotExists(CosmosDBCollectionDefinition collectionDefinition)
+        { 
+            // connecting client 
+            using (var client = new DocumentClient(new Uri(collectionDefinition.Endpoint), collectionDefinition.SecretKey))
+            {
+                await client.CreateDatabaseIfNotExistsAsync(new Database { Id = collectionDefinition.DbName });
+
+                // create collection if it does not exist 
+                // WARNING: CreateDocumentCollectionIfNotExistsAsync will create a new 
+                // with reserved throughput which has pricing implications. For details
+                // visit: https://azure.microsoft.com/en-us/pricing/details/cosmos-db/
+                await client.CreateDocumentCollectionIfNotExistsAsync(
+                    UriFactory.CreateDatabaseUri(collectionDefinition.DbName),
+                    new DocumentCollection { Id = collectionDefinition.CollectionName },
+                    new RequestOptions { OfferThroughput = collectionDefinition.Throughput });
+            }
         }
     }
 }

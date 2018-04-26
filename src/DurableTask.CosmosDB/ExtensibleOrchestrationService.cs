@@ -170,15 +170,15 @@ namespace DurableTask.AzureStorage
             }
             else
             {
-                this.leaseManager = new CosmosDBLeaseManager(
-                    settings.TaskHubName,
-                    settings.WorkerId,
-                    settings.CosmosDBEndpoint,
-                    settings.CosmosDBAuthKey,
-                    settings.CosmosDBLeaseManagementCollection,
-                    settings.LeaseInterval,
-                    settings.LeaseRenewInterval,
-                    this.stats);
+                //this.leaseManager = new CosmosDBLeaseManager(
+                //    settings.TaskHubName,
+                //    settings.WorkerId,
+                //    settings.CosmosDBEndpoint,
+                //    settings.CosmosDBAuthKey,
+                //    settings.CosmosDBLeaseManagementCollection,
+                //    settings.LeaseInterval,
+                //    settings.LeaseRenewInterval,
+                //    this.stats);
             }
         }
 

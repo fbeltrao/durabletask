@@ -32,5 +32,8 @@ namespace DurableTask.AzureStorage.Monitoring
         public Counter ActiveActivityExecutions { get; } = new Counter();
 
         public Counter PendingOrchestratorMessages { get; } = new Counter();
+
+        public Counter CosmosDBRequests { get; } = new Counter();
+
     }
 }
