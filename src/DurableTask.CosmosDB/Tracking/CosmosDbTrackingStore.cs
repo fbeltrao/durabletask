@@ -25,6 +25,11 @@ namespace DurableTask.CosmosDB.Tracking
     using Microsoft.Azure.Documents.Client;
     using System.Linq;
     using Microsoft.Azure.Documents.Linq;
+    using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
+    using DurableTask.AzureStorage;
+    using System.Reflection;
+    using System.Runtime.Serialization;
 
     class CosmosDbTrackingStore : TrackingStoreBase
     {
@@ -32,15 +37,29 @@ namespace DurableTask.CosmosDB.Tracking
         private string instancesCollectionName;
         private string historyCollectionName;
         private string DatabaseName;
+        readonly IReadOnlyDictionary<EventType, Type> eventTypeMap;
 
         public Microsoft.WindowsAzure.Storage.Table.CloudTable HistoryTable { get; internal set; }
 
         public CosmosDbTrackingStore(string endpoint, string key, string instanceCollection, string historyCollection, string databaseName)
         {
-            this.documentClient = new DocumentClient(new Uri(endpoint), key);
+            this.documentClient = new DocumentClient(new Uri(endpoint), key, new JsonSerializerSettings()
+            {
+                TypeNameHandling = TypeNameHandling.All,
+            });
+
             this.instancesCollectionName = instanceCollection;
             this.historyCollectionName = historyCollection;
             this.DatabaseName = databaseName;
+
+            Type historyEventType = typeof(HistoryEvent);
+
+            IEnumerable<Type> historyEventTypes = historyEventType.Assembly.GetTypes().Where(
+                t => !t.IsAbstract && t.IsSubclassOf(historyEventType));
+
+            PropertyInfo eventTypeProperty = historyEventType.GetProperty(nameof(HistoryEvent.EventType));
+            this.eventTypeMap = historyEventTypes.ToDictionary(
+                type => ((HistoryEvent)FormatterServices.GetUninitializedObject(type)).EventType);
         }
 
         public override async Task CreateAsync()
@@ -102,12 +121,41 @@ namespace DurableTask.CosmosDB.Tracking
         {
             List<HistoryEvent> result = new List<HistoryEvent>();
             OrchestrationTrackDocument documentHistory = await GetHistoryDocument(instanceId);
-            if (documentHistory != null && documentHistory.History.ContainsKey(expectedExecutionId))
+            JsonEntityConverter converter = new JsonEntityConverter();
+            List<JObject> list = null;
+            if (documentHistory != null && !string.IsNullOrEmpty(expectedExecutionId) && documentHistory.History.ContainsKey(expectedExecutionId))
             {
-                result = documentHistory.History[expectedExecutionId];
+                list = documentHistory.History[expectedExecutionId];
+            }
+            else if (documentHistory != null)
+            {
+                list = documentHistory.History.Values.FirstOrDefault();
+            }
+
+            if (list != null)
+            {
+                foreach (var item in list)
+                {
+                    result.Add((HistoryEvent)converter.ConvertFromTableEntity(item, GetTypeForJsonObject));
+                }
             }
 
             return result;
+        }
+
+        Type GetTypeForJsonObject(JObject jsonEntity)
+        {
+            EventType eventType;
+            if (jsonEntity["EventType"] != null)
+            {
+                eventType = (EventType)Enum.Parse(typeof(EventType), jsonEntity["EventType"].Value<string>());
+            }
+            else
+            {
+                throw new ArgumentException($"{jsonEntity["EventType"]} is not a valid EventType value.");
+            }
+
+            return this.eventTypeMap[eventType];
         }
 
         public override async Task<IList<OrchestrationState>> GetStateAsync(string instanceId, bool allExecutions)
@@ -180,10 +228,10 @@ namespace DurableTask.CosmosDB.Tracking
             string executionId = executionStartedEvent.OrchestrationInstance.ExecutionId;
             if (!document.History.ContainsKey(executionId))
             {
-                document.History.Add(executionId, new List<HistoryEvent>());
+                document.History.Add(executionId, new List<JObject>());
             }
 
-            document.History[executionId].Add(executionStartedEvent);
+            document.History[executionId].Add(new JsonEntityConverter().ConvertToTableEntity(executionStartedEvent));
             document.SetPropertyValue("history", document.History);
 
             await SaveHistoryDocument(document);
@@ -232,10 +280,10 @@ namespace DurableTask.CosmosDB.Tracking
             });
         }
 
-        private Task<ResourceResponse<Document>> SaveHistoryDocument(OrchestrationTrackDocument value)
+        private async Task<ResourceResponse<Document>> SaveHistoryDocument(OrchestrationTrackDocument value)
         {
             var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
-            return documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
+            return await documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
             {
                 PartitionKey = new PartitionKey(value.InstanceId)
             });
@@ -248,6 +296,7 @@ namespace DurableTask.CosmosDB.Tracking
             if (!string.IsNullOrEmpty(instanceId))
             {
                 var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
+
                 var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
                 {
                     PartitionKey = new PartitionKey(instanceId)
