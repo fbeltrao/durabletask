@@ -98,9 +98,16 @@ namespace DurableTask.CosmosDB.Tracking
             return result;
         }
 
-        public override Task<IList<HistoryEvent>> GetHistoryEventsAsync(string instanceId, string expectedExecutionId, CancellationToken cancellationToken = default)
+        public override async Task<IList<HistoryEvent>> GetHistoryEventsAsync(string instanceId, string expectedExecutionId, CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException();
+            List<HistoryEvent> result = new List<HistoryEvent>();
+            OrchestrationTrackDocument documentHistory = await GetHistoryDocument(instanceId);
+            if (documentHistory != null && documentHistory.History.ContainsKey(expectedExecutionId))
+            {
+                result = documentHistory.History[expectedExecutionId];
+            }
+
+            return result;
         }
 
         public override async Task<IList<OrchestrationState>> GetStateAsync(string instanceId, bool allExecutions)
@@ -122,7 +129,7 @@ namespace DurableTask.CosmosDB.Tracking
             OrchestrationState result = null;
 
             OrchestrationStateDocument document = await GetDocumentStateAsync(instanceId);
-            if (document != null && document.Executions.ContainsKey(executionId))
+            if (document != null && !string.IsNullOrEmpty(executionId) && document.Executions.ContainsKey(executionId))
             {
                 result = document.Executions[executionId];
             }
@@ -261,7 +268,7 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override Task StartAsync()
         {
-            throw new NotImplementedException();
+            return Task.FromResult(0);
         }
 
         public override async Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
