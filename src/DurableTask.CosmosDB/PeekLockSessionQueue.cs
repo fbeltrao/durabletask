@@ -61,8 +61,10 @@ namespace DurableTask.CosmosDB
             {
                 foreach(TaskSession ts in this.sessionQueue)
                 {
-                    if(ts.Id == message.OrchestrationInstance.InstanceId)
+                    // 1. Search in cosmos the doc where id=message.OrchestrationInstance.InstanceId
+                    if (ts.Id == message.OrchestrationInstance.InstanceId)
                     {
+                        // 2. If found, add the message to the .Messages and update document
                         ts.Messages.Add(message);
                         return;
                     }
@@ -77,7 +79,7 @@ namespace DurableTask.CosmosDB
                     }
                 }
 
-                // create a new session
+                // create a new session and cosmos document
                 sessionQueue.Add(new TaskSession()
                 {
                     Id = message.OrchestrationInstance.InstanceId,
