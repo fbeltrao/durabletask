@@ -42,7 +42,6 @@ namespace DurableTask.CosmosDB
         private readonly string instancesCollectionName;
         private readonly string cosmosDBEndpoint;
         private readonly string cosmosDBAuthKey;
-        private readonly DocumentClient documentClient;
         int MaxConcurrentWorkItems = 20;
 
         // dictionary<instanceid, dictionary<executionid, orchestrationstate>>
@@ -98,7 +97,6 @@ namespace DurableTask.CosmosDB
             this.cosmosDBEndpoint = settings.CosmosDBEndpoint;
             this.cosmosDBAuthKey = settings.CosmosDBAuthKey;
 
-            this.documentClient = new DocumentClient(new Uri(this.cosmosDBEndpoint), this.cosmosDBAuthKey);
 
             if (customInstanceStore == null)
             {
@@ -333,15 +331,6 @@ namespace DurableTask.CosmosDB
             cts.Cancel();
 
             return await tcs.Task;
-        }
-
-        async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument doc)
-        {
-            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            return await documentClient.UpsertDocumentAsync(documentUri, doc, new RequestOptions()
-            {
-                PartitionKey = new PartitionKey(doc.InstanceId)
-            });
         }
 
         /// <inheritdoc />
@@ -644,7 +633,6 @@ namespace DurableTask.CosmosDB
             {
                 this.timerLock.Dispose();
                 this.thisLock.Dispose();
-                this.documentClient.Dispose();
                 this.cancellationTokenSource.Cancel();
                 this.cancellationTokenSource.Dispose();
             }
