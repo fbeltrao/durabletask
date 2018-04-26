@@ -1,12 +1,9 @@
-﻿using DurableTask.Core;
-using Microsoft.Azure.Documents;
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace DurableTask.CosmosDB
+﻿namespace DurableTask.CosmosDB
 {
+    using DurableTask.Core;
+    using Microsoft.Azure.Documents;
+    using Newtonsoft.Json;
+    using System.Collections.Generic;
 
     /// <summary>
     /// Orchestration State document

@@ -102,8 +102,7 @@ namespace DurableTask.CosmosDB.Tracking
             var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
             var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
             {
-                PartitionKey = new PartitionKey(instanceId),
-                EnableScanInQuery = true
+                PartitionKey = new PartitionKey(instanceId)
 
             })
                 .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
@@ -123,9 +122,59 @@ namespace DurableTask.CosmosDB.Tracking
             throw new NotImplementedException();
         }
 
-        public override Task SetNewExecutionAsync(ExecutionStartedEvent executionStartedEvent)
+        public override async Task SetNewExecutionAsync(ExecutionStartedEvent executionStartedEvent)
         {
-            throw new NotImplementedException();
+            OrchestrationTrackDocument document = await GetHistoryDocument(executionStartedEvent.OrchestrationInstance.InstanceId);
+            if (document == null)
+            {
+                document = new OrchestrationTrackDocument();
+                document.InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId;
+            }
+
+            string executionId = executionStartedEvent.OrchestrationInstance.ExecutionId;
+            if (!document.History.ContainsKey(executionId))
+            {
+                document.History.Add(executionId, new List<HistoryEvent>());
+            }
+
+            document.History[executionId].Add(executionStartedEvent);
+            document.SetPropertyValue("history", document.History);
+
+            await SaveHistoryDocument(document);
+        }
+
+        private Task<ResourceResponse<Document>> SaveHistoryDocument(OrchestrationTrackDocument value)
+        {
+            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
+            return documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
+            {
+                PartitionKey = new PartitionKey(value.InstanceId)
+            });
+        }
+
+        private async Task<OrchestrationTrackDocument> GetHistoryDocument(string instanceId)
+        {
+            OrchestrationTrackDocument result = null;
+
+            if (!string.IsNullOrEmpty(instanceId))
+            {
+                var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
+                var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
+                {
+                    PartitionKey = new PartitionKey(instanceId)
+
+                })
+                    .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
+
+                var list = await query.ExecuteNextAsync<OrchestrationTrackDocument>();
+
+                if (list != null && list.Count > 0)
+                {
+                    result = list.FirstOrDefault();
+                }
+            }
+
+            return result;
         }
 
         public override Task StartAsync()
