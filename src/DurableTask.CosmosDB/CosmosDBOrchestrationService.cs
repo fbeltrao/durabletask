@@ -300,37 +300,16 @@ namespace DurableTask.CosmosDB
             await this.thisLock.WaitAsync();
             try
             {
-                var stateDocument = await GetOrchestrationState(instanceId);
+                OrchestrationState state = await this.GetOrchestrationStateAsync(instanceId, executionId);
 
-                if (stateDocument != null)
+                if (state != null
+                    && state.OrchestrationStatus != OrchestrationStatus.Running
+                    && state.OrchestrationStatus != OrchestrationStatus.Pending)
                 {
-
-                    if (stateDocument != null && stateDocument.Executions.Count > 0)
+                    // if only master id was specified then continueasnew is a not a terminal state
+                    if (!(string.IsNullOrWhiteSpace(executionId) && state.OrchestrationStatus == OrchestrationStatus.ContinuedAsNew))
                     {
-                        OrchestrationState state = null;
-                        if (string.IsNullOrWhiteSpace(executionId))
-                        {
-                            IOrderedEnumerable<OrchestrationState> sortedemap = stateDocument.Executions.Values.OrderByDescending(os => os.CreatedTime);
-                            state = sortedemap.First();
-                        }
-                        else
-                        {
-                            if (stateDocument.Executions.ContainsKey(executionId))
-                            {
-                                state = stateDocument.Executions[executionId];
-                            }
-                        }
-
-                        if (state != null
-                            && state.OrchestrationStatus != OrchestrationStatus.Running
-                            && state.OrchestrationStatus != OrchestrationStatus.Pending)
-                        {
-                            // if only master id was specified then continueasnew is a not a terminal state
-                            if (!(string.IsNullOrWhiteSpace(executionId) && state.OrchestrationStatus == OrchestrationStatus.ContinuedAsNew))
-                            {
-                                tcs.TrySetResult(state);
-                            }
-                        }
+                        tcs.TrySetResult(state);
                     }
                 }
             }
@@ -354,47 +333,6 @@ namespace DurableTask.CosmosDB
             cts.Cancel();
 
             return await tcs.Task;
-        }
-
-        private async Task<OrchestrationStateDocument> GetOrchestrationState(string instanceId)
-        {
-            OrchestrationStateDocument result = null;
-            try
-            {
-
-                var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-                var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
-                {
-                    PartitionKey = new PartitionKey(instanceId),
-                    EnableScanInQuery = true
-
-                })
-                    .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
-
-                var list = await query.ExecuteNextAsync<OrchestrationStateDocument>();
-
-                if (list != null && list.Count > 0)
-                {
-                    result = list.FirstOrDefault();
-                }
-
-                //var stateDocument = await this.documentClient.ReadDocumentAsync<OrchestrationStateDocument>(
-                //    documentUri,
-                //    new RequestOptions() { PartitionKey = new PartitionKey(instanceId) }
-                //    );
-
-                //return stateDocument.Document;
-            }
-            catch (DocumentClientException ex)
-            {
-
-                if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-                    return default(OrchestrationStateDocument);
-
-                throw;
-            }
-
-            return result;
         }
 
         async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument doc)
@@ -508,26 +446,10 @@ namespace DurableTask.CosmosDB
                     }
                 }
 
+                await this.trackingStore.UpdateStateAsync(newOrchestrationRuntimeState, workItem.InstanceId, newOrchestrationRuntimeState.OrchestrationInstance.ExecutionId);
+
                 if (state != null)
                 {
-                    var doc = await GetOrchestrationState(workItem.InstanceId);
-                    if (doc == null)
-                    {
-                        doc = new OrchestrationStateDocument()
-                        {
-                            InstanceId = workItem.InstanceId,
-                        };
-
-                        doc.Executions = new Dictionary<string, OrchestrationState>();
-
-                    }
-
-                    state.LastUpdatedTime = DateTime.UtcNow;
-                    doc.Executions[workItem.OrchestrationRuntimeState.OrchestrationInstance.ExecutionId] = state;
-                    doc.SetPropertyValue("executions", doc.Executions);
-                    await this.trackingStore.UpdateStateAsync(workItem.OrchestrationRuntimeState, workItem.InstanceId, state.OrchestrationInstance.ExecutionId);
-                    await UpsertOrchestrationState(doc);
-
                     // signal any waiters waiting on instanceid_executionid or just the latest instanceid_
                     TaskCompletionSource<OrchestrationState> tcs = null;
                     TaskCompletionSource<OrchestrationState> tcs1 = null;

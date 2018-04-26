@@ -108,6 +108,10 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 result = document.Executions[executionId];
             }
+            else if(document != null && string.IsNullOrEmpty(executionId))
+            {
+                result = document.Executions.Values.FirstOrDefault();
+            }
 
             return result;
         }
@@ -194,12 +198,12 @@ namespace DurableTask.CosmosDB.Tracking
             ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
         }
 
-        private async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument doc)
+        private async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument value)
         {
             var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            return await documentClient.UpsertDocumentAsync(documentUri, doc, new RequestOptions()
+            return await documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
             {
-                PartitionKey = new PartitionKey(doc.InstanceId)
+                PartitionKey = new PartitionKey(value.InstanceId)
             });
         }
 
@@ -244,21 +248,42 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
         {
-            var doc = await GetDocumentStateAsync(instanceId);
-            if (doc == null)
+            OrchestrationStateDocument value = await GetDocumentStateAsync(instanceId);
+            if (value == null)
             {
-                doc = new OrchestrationStateDocument()
+                value = new OrchestrationStateDocument()
                 {
                     InstanceId = instanceId,
                 };
 
-                doc.Executions = new Dictionary<string, OrchestrationState>();
-
+                value.Executions = new Dictionary<string, OrchestrationState>();
             }
 
-            //runtimeState.LastUpdatedTime = DateTime.UtcNow;
-            //doc.Executions[workItem.OrchestrationRuntimeState.OrchestrationInstance.ExecutionId] = state;
-            //doc.SetPropertyValue("executions", doc.Executions);
+
+            value.Executions[runtimeState.OrchestrationInstance.ExecutionId] = ConvertRochestrationRuntimeState(runtimeState);
+            value.SetPropertyValue("executions", value.Executions);
+            await UpsertOrchestrationState(value);
+        }
+
+        private OrchestrationState ConvertRochestrationRuntimeState(OrchestrationRuntimeState value)
+        {
+            return new OrchestrationState()
+            {
+                CompletedTime = value.CompletedTime,
+                CompressedSize = value.CompressedSize,
+                CreatedTime = value.CreatedTime,
+                Input = value.Input,
+                LastUpdatedTime = DateTime.UtcNow,
+                Name = value.Name,
+                OrchestrationInstance = value.OrchestrationInstance,
+                OrchestrationStatus = value.OrchestrationStatus,
+                Output = value.Output,
+                ParentInstance = value.ParentInstance,
+                Size = value.Size,
+                Status = value.Status,
+                Tags = value.Tags,
+                Version = value.Version
+            };
         }
     }
 }
