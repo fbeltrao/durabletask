@@ -15,6 +15,7 @@ namespace DurableTask.AzureStorage.Tests
 {
     using System;
     using System.Collections.Generic;
+    using System.Configuration;
     using System.Diagnostics;
     using System.Linq;
     using System.Threading;
@@ -68,6 +69,8 @@ namespace DurableTask.AzureStorage.Tests
                 TaskHubName = taskHubName,
                 StorageConnectionString = storageConnectionString,
                 WorkerId = workerId,
+                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
             };
 
             Trace.TraceInformation($"Task Hub name: {taskHubName}");

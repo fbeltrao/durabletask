@@ -72,14 +72,30 @@ namespace DurableTask.CosmosDB.Tracking
 
         }
 
-        public override Task DeleteAsync()
+        public override async Task DeleteAsync()
         {
-            throw new NotImplementedException();
+            try
+            {
+                await this.documentClient.DeleteDocumentCollectionAsync(this.historyCollectionName);
+                await this.documentClient.DeleteDocumentCollectionAsync(this.instancesCollectionName);
+            }
+            catch (Exception)
+            {
+
+            }
+
+
         }
 
-        public override Task<bool> ExistsAsync()
+        public override async Task<bool> ExistsAsync()
         {
-            throw new NotImplementedException();
+            bool result = false;
+            var instanceCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
+            var historyCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
+            var instanceCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(instanceCollection);
+            var historyCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(historyCollection);
+            result = instanceCollectionValue.Resource != null && historyCollectionValue.Resource != null;
+            return result;
         }
 
         public override Task<IList<HistoryEvent>> GetHistoryEventsAsync(string instanceId, string expectedExecutionId, CancellationToken cancellationToken = default)
@@ -110,7 +126,7 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 result = document.Executions[executionId];
             }
-            else if(document != null && string.IsNullOrEmpty(executionId))
+            else if (document != null && string.IsNullOrEmpty(executionId))
             {
                 result = document.Executions.Values.FirstOrDefault();
             }
