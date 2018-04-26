@@ -16,28 +16,28 @@ namespace DurableTask.AzureStorage.Partitioning
     using System.Collections.Generic;
     using System.Threading.Tasks;
 
-    interface ILeaseManager<T> where T : Lease
+    interface ILeaseManager
     {
         Task<bool> LeaseStoreExistsAsync();
 
         Task<bool> CreateLeaseStoreIfNotExistsAsync(TaskHubInfo eventHubInfo);
 
-        Task<IEnumerable<T>> ListLeasesAsync();
+        Task<IEnumerable<Lease>> ListLeasesAsync();
 
         Task CreateLeaseIfNotExistAsync(string partitionId);
 
-        Task<T> GetLeaseAsync(string partitionId);
+        Task<Lease> GetLeaseAsync(string partitionId);
 
-        Task<bool> RenewAsync(T lease);
+        Task<bool> RenewAsync(Lease lease);
 
-        Task<bool> AcquireAsync(T lease, string owner);
+        Task<bool> AcquireAsync(Lease lease, string owner);
 
-        Task<bool> ReleaseAsync(T lease);
+        Task<bool> ReleaseAsync(Lease lease);
 
-        Task DeleteAsync(T lease);
+        Task DeleteAsync(Lease lease);
 
         Task DeleteAllAsync();
 
-        Task<bool> UpdateAsync(T lease);
+        Task<bool> UpdateAsync(Lease lease);
     }
 }

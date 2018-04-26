@@ -11,13 +11,14 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Tests
+namespace DurableTask.CosmosDB.Tests
 {
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Runtime.Serialization;
     using System.Threading.Tasks;
+    using DurableTask.AzureStorage;
     using DurableTask.Core;
 
     internal sealed class TestOrchestrationHost : IDisposable

@@ -15,9 +15,9 @@ namespace DurableTask.AzureStorage.Partitioning
 {
     using System.Threading.Tasks;
 
-    interface IPartitionObserver<T> where T : Lease
+    interface IPartitionObserver
     {
-        Task OnPartitionAcquiredAsync(T l);
-        Task OnPartitionReleasedAsync(T l, CloseReason reason);
+        Task OnPartitionAcquiredAsync(Lease l);
+        Task OnPartitionReleasedAsync(Lease l, CloseReason reason);
     }
 }

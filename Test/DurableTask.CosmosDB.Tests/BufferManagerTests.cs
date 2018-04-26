@@ -11,11 +11,12 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Tests
+namespace DurableTask.CosmosDB.Tests
 {
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Threading.Tasks;
+    using DurableTask.AzureStorage;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
 
     [TestClass]
