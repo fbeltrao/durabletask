@@ -10,7 +10,7 @@ namespace DurableTask.CosmosDB.Tests
 {
     static class TestHelpers
     {
-        public static TestOrchestrationHost GetTestOrchestrationHost()
+        public static TestOrchestrationHost GetTestOrchestrationHost(string leaseManagementCollection = null)
         {
             string storageConnectionString = GetTestStorageAccountConnectionString();
 
@@ -20,7 +20,8 @@ namespace DurableTask.CosmosDB.Tests
                     StorageConnectionString = storageConnectionString,
                     TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),
                     CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
-                    CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
+                    CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
+                    CosmosDBLeaseManagementCollection = leaseManagementCollection,
                 });
 
             service.CreateAsync().GetAwaiter().GetResult();
