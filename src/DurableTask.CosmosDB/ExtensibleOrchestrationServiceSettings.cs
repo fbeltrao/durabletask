@@ -122,5 +122,10 @@ namespace DurableTask.AzureStorage
         /// CosmosDB authorization key
         /// </summary>
         public string CosmosDBAuthKey { get; set; }
+
+        /// <summary>
+        /// CosmosDB lease management collection name
+        /// </summary>
+        public string CosmosDBLeaseManagementCollection { get; set; }
     }
 }

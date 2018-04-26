@@ -146,24 +146,40 @@ namespace DurableTask.AzureStorage
                 this.GetTaskHubCreatorTask,
                 LazyThreadSafetyMode.ExecutionAndPublication);
 
-            this.leaseManager = GetBlobLeaseManager(
-                settings.TaskHubName,
-                settings.WorkerId,
-                account,
-                settings.LeaseInterval,
-                settings.LeaseRenewInterval,
-                this.stats);
-            this.partitionManager = new PartitionManager<BlobLease>(
-                this.storageAccountName,
-                this.settings.TaskHubName,
-                settings.WorkerId,
-                this.leaseManager,
-                new PartitionManagerOptions
-                {
-                    AcquireInterval = settings.LeaseAcquireInterval,
-                    RenewInterval = settings.LeaseRenewInterval,
-                    LeaseInterval = settings.LeaseInterval,
-                });
+            if (string.IsNullOrEmpty(settings.CosmosDBLeaseManagementCollection))
+            {
+                this.leaseManager = GetBlobLeaseManager(
+                    settings.TaskHubName,
+                    settings.WorkerId,
+                    account,
+                    settings.LeaseInterval,
+                    settings.LeaseRenewInterval,
+                    this.stats);
+
+                this.partitionManager = new PartitionManager<BlobLease>(
+                    this.storageAccountName,
+                    this.settings.TaskHubName,
+                    settings.WorkerId,
+                    this.leaseManager,
+                    new PartitionManagerOptions
+                    {
+                        AcquireInterval = settings.LeaseAcquireInterval,
+                        RenewInterval = settings.LeaseRenewInterval,
+                        LeaseInterval = settings.LeaseInterval,
+                    });
+            }
+            else
+            {
+                this.leaseManager = new CosmosDBLeaseManager(
+                    settings.TaskHubName,
+                    settings.WorkerId,
+                    settings.CosmosDBEndpoint,
+                    settings.CosmosDBAuthKey,
+                    settings.CosmosDBLeaseManagementCollection,
+                    settings.LeaseInterval,
+                    settings.LeaseRenewInterval,
+                    this.stats);
+            }
         }
 
         internal string WorkerId => this.settings.WorkerId;
