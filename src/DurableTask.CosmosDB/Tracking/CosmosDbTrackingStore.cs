@@ -121,7 +121,7 @@ namespace DurableTask.CosmosDB.Tracking
         {
             List<HistoryEvent> result = new List<HistoryEvent>();
             OrchestrationTrackDocument documentHistory = await GetHistoryDocument(instanceId);
-            TableEntityConverter converter = new TableEntityConverter();
+            JsonEntityConverter converter = new JsonEntityConverter();
             List<JObject> list = null;
             if (documentHistory != null && !string.IsNullOrEmpty(expectedExecutionId) && documentHistory.History.ContainsKey(expectedExecutionId))
             {
@@ -231,7 +231,7 @@ namespace DurableTask.CosmosDB.Tracking
                 document.History.Add(executionId, new List<JObject>());
             }
 
-            document.History[executionId].Add(new TableEntityConverter().ConvertToTableEntity(executionStartedEvent));
+            document.History[executionId].Add(new JsonEntityConverter().ConvertToTableEntity(executionStartedEvent));
             document.SetPropertyValue("history", document.History);
 
             await SaveHistoryDocument(document);
