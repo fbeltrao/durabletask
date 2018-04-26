@@ -673,7 +673,7 @@ namespace DurableTask.CosmosDB
             var queuedItem = await this.workerQueue.ReceiveMessageAsync(receiveTimeout,
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, this.cancellationTokenSource.Token).Token);
 
-            TaskMessage taskMessage = queuedItem.data;
+            TaskMessage taskMessage = queuedItem?.data;
             if (taskMessage == null)
             {
                 return null;
@@ -697,7 +697,7 @@ namespace DurableTask.CosmosDB
         /// <inheritdoc />
         public async Task CompleteTaskActivityWorkItemAsync(TaskActivityWorkItem workItem, TaskMessage responseMessage)
         {
-            this.thisLock.Wait();
+            await this.thisLock.WaitAsync();
             try
             {
                 await this.workerQueue.CompleteMessageAsync(workItem.Id, workItem.TaskMessage);

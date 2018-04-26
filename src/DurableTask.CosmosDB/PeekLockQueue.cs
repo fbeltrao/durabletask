@@ -27,7 +27,8 @@ namespace DurableTask.CosmosDB
         //List<TaskMessage> messages;
         HashSet<TaskMessage> lockTable;
 
-        readonly object thisLock = new object();
+        SemaphoreSlim thisLock = new SemaphoreSlim(1, 1);
+        //readonly object thisLock = new object();
 
 
         public PeeklockQueue()
@@ -53,14 +54,24 @@ namespace DurableTask.CosmosDB
             Stopwatch timer = Stopwatch.StartNew();
             while (timer.Elapsed < receiveTimeout && !cancellationToken.IsCancellationRequested)
             {
-                var queueItem = await this.messagesInCosmos.Dequeue<TaskMessage>();
-                var tm = queueItem.data;
-                if (!this.lockTable.Contains(tm))
+                await thisLock.WaitAsync();
+                try
                 {
-                    this.lockTable.Add(tm);
-                    return queueItem;
+                    var queueItem = await this.messagesInCosmos.Dequeue<TaskMessage>();
+                    var tm = queueItem?.data;
+                    if (tm != null && !this.lockTable.Contains(tm))
+                    {
+                        this.lockTable.Add(tm);
+                        return queueItem;
+                    }
+                    //await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    await Task.Delay(TimeSpan.FromMilliseconds(1000));
+
                 }
-                await Task.Delay(TimeSpan.FromMilliseconds(500));
+                finally
+                {
+                    thisLock.Release();
+                }
             }
 
             if (cancellationToken.IsCancellationRequested)
@@ -73,33 +84,40 @@ namespace DurableTask.CosmosDB
 
         public async Task SendMessageAsync(TaskMessage message)
         {
-            //lock(this.thisLock)
-            //{
-                //this.messages.Add(message);
-
-                // add queue item in cosmos
+            await thisLock.WaitAsync();
+            try
+            {
                 await messagesInCosmos.Queue(message);
-            //}
+
+            }
+            finally
+            {
+                this.thisLock.Release();
+            }
+                
         }
 
         public async Task CompleteMessageAsync(string id, TaskMessage message)
         {
-            //lock(this.thisLock)
-            //{
-            //    if(!this.lockTable.Contains(message))
-            //    {
-            //        throw new InvalidOperationException("Message Lock Lost");
-            //    }
 
+            await thisLock.WaitAsync();
+            try
+            {
                 this.lockTable.Remove(message);
-              //  this.messages.Remove(message);
                 await this.messagesInCosmos.CompleteAsync(id);
-            //}
+
+            }
+            finally
+            {
+                this.thisLock.Release();
+            }
         }
 
         public void AbandonMessageAsync(TaskMessage message)
         {
-            lock (this.thisLock)
+
+            thisLock.Wait();
+            try
             {
                 if (!this.lockTable.Contains(message))
                 {
@@ -108,8 +126,10 @@ namespace DurableTask.CosmosDB
 
                 this.lockTable.Remove(message);
             }
+            finally
+            {
+                this.thisLock.Release();
+            }
         }
-
-        
     }
 }
