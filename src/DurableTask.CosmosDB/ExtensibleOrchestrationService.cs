@@ -26,6 +26,7 @@ namespace DurableTask.AzureStorage
     using DurableTask.AzureStorage.Partitioning;
     using DurableTask.Core;
     using DurableTask.Core.History;
+    using DurableTask.CosmosDB;
     using DurableTask.CosmosDB.Tracking;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Blob;
@@ -45,7 +46,7 @@ namespace DurableTask.AzureStorage
 
         static readonly HistoryEvent[] EmptyHistoryEventList = new HistoryEvent[0];
 
-        readonly ExtensibleOrchestrationServiceSettings settings;
+        readonly IExtensibleOrchestrationServiceSettings settings;
         readonly AzureStorageOrchestrationServiceStats stats;
         readonly string storageAccountName;
         readonly CloudQueueClient queueClient;
@@ -78,7 +79,7 @@ namespace DurableTask.AzureStorage
         /// Initializes a new instance of the <see cref="ExtensibleOrchestrationService"/> class.
         /// </summary>
         /// <param name="settings">The settings used to configure the orchestration service.</param>
-        public ExtensibleOrchestrationService(ExtensibleOrchestrationServiceSettings settings) : this(settings, null)
+        public ExtensibleOrchestrationService(StorageOrchestrationServiceSettings settings) : this(settings, null)
         { }
 
         /// <summary>
@@ -86,7 +87,7 @@ namespace DurableTask.AzureStorage
         /// </summary>
         /// <param name="settings">The settings used to configure the orchestration service.</param>
         /// <param name="customInstanceStore">Custom UserDefined Instance store to be used with the AzureStorageOrchestrationService</param>
-        public ExtensibleOrchestrationService(ExtensibleOrchestrationServiceSettings settings, IOrchestrationServiceInstanceStore customInstanceStore)
+        public ExtensibleOrchestrationService(IExtensibleOrchestrationServiceSettings settings, IOrchestrationServiceInstanceStore customInstanceStore)
         {
             if (settings == null)
             {
@@ -95,6 +96,7 @@ namespace DurableTask.AzureStorage
 
             ValidateSettings(settings);
 
+            // TBD - decide if we will use Storage or Cosmos DB. For now initialize Storage specific settings. 
             this.settings = settings;
             this.tableEntityConverter = new TableEntityConverter();
             CloudStorageAccount account = CloudStorageAccount.Parse(settings.StorageConnectionString);
@@ -124,7 +126,7 @@ namespace DurableTask.AzureStorage
             if (customInstanceStore == null)
             {
                 if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, settings.HistoryTableRequestOptions, this.stats);
+                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
                 else
                     this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
             }
@@ -240,7 +242,7 @@ namespace DurableTask.AzureStorage
                 stats: stats);
         }
 
-        static void ValidateSettings(ExtensibleOrchestrationServiceSettings settings)
+        static void ValidateSettings(IExtensibleOrchestrationServiceSettings settings)
         {
             if (settings.ControlQueueBatchSize > 32)
             {
@@ -583,7 +585,7 @@ namespace DurableTask.AzureStorage
                             IEnumerable<CloudQueueMessage> batch = await controlQueue.GetMessagesAsync(
                                 this.settings.ControlQueueBatchSize,
                                 this.settings.ControlQueueVisibilityTimeout,
-                                this.settings.ControlQueueRequestOptions,
+                                ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
                                 null /* operationContext */,
                                 cancellationToken);
                             this.stats.StorageRequests.Increment();
@@ -790,7 +792,7 @@ namespace DurableTask.AzureStorage
                     string targetInstanceId = taskMessage.OrchestrationInstance.InstanceId;
                     CloudQueue targetControlQueue = await this.GetControlQueueAsync(targetInstanceId);
 
-                    enqueueTasks.Add(this.EnqueueMessageAsync(context, targetControlQueue, taskMessage, null, this.settings.ControlQueueRequestOptions));
+                    enqueueTasks.Add(this.EnqueueMessageAsync(context, targetControlQueue, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
                 }
             }
 
@@ -809,7 +811,7 @@ namespace DurableTask.AzureStorage
                         initialVisibilityDelay = TimeSpan.Zero;
                     }
 
-                    enqueueTasks.Add(this.EnqueueMessageAsync(context, currentControlQueue, taskMessage, initialVisibilityDelay, this.settings.ControlQueueRequestOptions));
+                    enqueueTasks.Add(this.EnqueueMessageAsync(context, currentControlQueue, taskMessage, initialVisibilityDelay, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
                 }
             }
 
@@ -819,7 +821,7 @@ namespace DurableTask.AzureStorage
                 addedWorkItemMessages = true;
                 foreach (TaskMessage taskMessage in outboundMessages)
                 {
-                    enqueueTasks.Add(this.EnqueueMessageAsync(context, this.workItemQueue, taskMessage, null, this.settings.WorkItemQueueRequestOptions));
+                    enqueueTasks.Add(this.EnqueueMessageAsync(context, this.workItemQueue, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions));
                 }
             }
 
@@ -828,7 +830,7 @@ namespace DurableTask.AzureStorage
                 totalMessageCount++;
                 addedControlMessages = true;
 
-                enqueueTasks.Add(this.EnqueueMessageAsync(context, currentControlQueue, continuedAsNewMessage, null, this.settings.ControlQueueRequestOptions));
+                enqueueTasks.Add(this.EnqueueMessageAsync(context, currentControlQueue, continuedAsNewMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
             }
 
             await Task.WhenAll(enqueueTasks);
@@ -878,7 +880,7 @@ namespace DurableTask.AzureStorage
                     context.Instance.ExecutionId);
                 Task deletetask = controlQueue.DeleteMessageAsync(
                     queueMessage,
-                    this.settings.ControlQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
                     context.StorageOperationContext);
 
                 // Handle the case where this message was already deleted.
@@ -925,7 +927,7 @@ namespace DurableTask.AzureStorage
                         e.OriginalQueueMessage,
                         this.settings.ControlQueueVisibilityTimeout,
                         MessageUpdateFields.Visibility,
-                        this.settings.ControlQueueRequestOptions,
+                        ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
                         context.StorageOperationContext);
 
                     return this.HandleNotFoundException(updateTask, e.OriginalQueueMessage.Id, workItem.InstanceId);
@@ -974,7 +976,7 @@ namespace DurableTask.AzureStorage
                     queueMessage,
                     TimeSpan.Zero,
                     MessageUpdateFields.Visibility,
-                    this.settings.ControlQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
                     context.StorageOperationContext);
 
                 // Message may have been processed and deleted already.
@@ -1018,7 +1020,7 @@ namespace DurableTask.AzureStorage
             {
                 queueMessage = await this.workItemQueue.GetMessageAsync(
                     this.settings.WorkItemQueueVisibilityTimeout,
-                    this.settings.WorkItemQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                     null /* operationContext */,
                     cancellationToken);
                 this.stats.StorageRequests.Increment();
@@ -1091,7 +1093,7 @@ namespace DurableTask.AzureStorage
                     await context.CreateOutboundQueueMessageAsync(this.messageManager, responseTaskMessage, controlQueue.Name),
                     null /* timeToLive */,
                     null /* initialVisibilityDelay */,
-                    this.settings.WorkItemQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                     context.StorageOperationContext);
                 this.stats.MessagesSent.Increment();
             }
@@ -1117,7 +1119,7 @@ namespace DurableTask.AzureStorage
 
             Task deleteTask = this.workItemQueue.DeleteMessageAsync(
                 context.MessageData.OriginalQueueMessage,
-                this.settings.WorkItemQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
 
             try
@@ -1155,7 +1157,7 @@ namespace DurableTask.AzureStorage
                 context.MessageData.OriginalQueueMessage,
                 this.settings.WorkItemQueueVisibilityTimeout,
                 MessageUpdateFields.Visibility,
-                this.settings.WorkItemQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
 
             try
@@ -1209,7 +1211,7 @@ namespace DurableTask.AzureStorage
                 context.MessageData.OriginalQueueMessage,
                 TimeSpan.Zero,
                 MessageUpdateFields.Visibility,
-                this.settings.WorkItemQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
 
             try
@@ -1331,7 +1333,7 @@ namespace DurableTask.AzureStorage
                     message),
                 null /* timeToLive */,
                 null /* initialVisibilityDelay */,
-                this.settings.ControlQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
                 null /* operationContext */);
             this.stats.StorageRequests.Increment();
             this.stats.MessagesSent.Increment();

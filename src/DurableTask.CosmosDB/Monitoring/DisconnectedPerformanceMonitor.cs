@@ -103,7 +103,7 @@ namespace DurableTask.AzureStorage.Monitoring
             CloudQueue[] controlQueues = await ExtensibleOrchestrationService.GetControlQueuesAsync(
                 this.storageAccount,
                 this.taskHub,
-                defaultPartitionCount: ExtensibleOrchestrationServiceSettings.DefaultPartitionCount);
+                defaultPartitionCount: AzureStorage.Utils.DefaultPartitionCount);
 
             Task<QueueMetric> workItemMetricTask = GetQueueMetricsAsync(workItemQueue);
             List<Task<QueueMetric>> controlQueueMetricTasks = controlQueues.Select(GetQueueMetricsAsync).ToList();
@@ -236,7 +236,7 @@ namespace DurableTask.AzureStorage.Monitoring
             CloudQueue[] controlQueues = await ExtensibleOrchestrationService.GetControlQueuesAsync(
                 this.storageAccount,
                 this.taskHub,
-                defaultPartitionCount: ExtensibleOrchestrationServiceSettings.DefaultPartitionCount);
+                defaultPartitionCount: AzureStorage.Utils.DefaultPartitionCount);
 
             // There is one queue per partition.
             var result = new ControlQueueData();

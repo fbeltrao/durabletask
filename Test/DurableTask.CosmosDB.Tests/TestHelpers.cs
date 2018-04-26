@@ -15,7 +15,7 @@ namespace DurableTask.CosmosDB.Tests
             string storageConnectionString = GetTestStorageAccountConnectionString();
 
             var service = new ExtensibleOrchestrationService(
-                new ExtensibleOrchestrationServiceSettings
+                new StorageOrchestrationServiceSettings
                 {
                     StorageConnectionString = storageConnectionString,
                     TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),

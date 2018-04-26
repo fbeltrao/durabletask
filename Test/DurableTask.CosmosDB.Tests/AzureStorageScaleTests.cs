@@ -66,7 +66,7 @@ namespace DurableTask.CosmosDB.Tests
             var storageAccount = CloudStorageAccount.Parse(storageConnectionString);
 
             string taskHubName = testName;
-            var settings = new ExtensibleOrchestrationServiceSettings
+            var settings = new StorageOrchestrationServiceSettings
             {
                 TaskHubName = taskHubName,
                 StorageConnectionString = storageConnectionString,
@@ -289,7 +289,7 @@ namespace DurableTask.CosmosDB.Tests
 
             // Create a service and enqueue N messages.
             // Make sure each partition has messages in it.
-            var settings = new ExtensibleOrchestrationServiceSettings()
+            var settings = new StorageOrchestrationServiceSettings()
             {
                 StorageConnectionString = TestHelpers.GetTestStorageAccountConnectionString(),
                 TaskHubName = nameof(TestInstanceAndMessageDistribution),
@@ -360,7 +360,7 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         public async Task MonitorIdleTaskHubDisconnected()
         {
-            var settings = new ExtensibleOrchestrationServiceSettings
+            var settings = new StorageOrchestrationServiceSettings
             {
                 StorageConnectionString = TestHelpers.GetTestStorageAccountConnectionString(),
                 TaskHubName = nameof(MonitorIdleTaskHubDisconnected),
@@ -412,7 +412,7 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         public async Task MonitorIncreasingControlQueueLoadDisconnected()
         {
-            var settings = new ExtensibleOrchestrationServiceSettings()
+            var settings = new StorageOrchestrationServiceSettings()
             {
                 StorageConnectionString = TestHelpers.GetTestStorageAccountConnectionString(),
                 TaskHubName = nameof(MonitorIncreasingControlQueueLoadDisconnected),
@@ -968,7 +968,7 @@ namespace DurableTask.CosmosDB.Tests
             public FakePerformanceMonitor(
                 string storageConnectionString,
                 string taskHub,
-                int partitionCount = ExtensibleOrchestrationServiceSettings.DefaultPartitionCount) 
+                int partitionCount = Utils.DefaultPartitionCount) 
                 : base(storageConnectionString, taskHub)
             {
                 this.PartitionCount = partitionCount;

@@ -33,5 +33,9 @@ namespace DurableTask.AzureStorage
 
             await Task.WhenAll(tasks.ToArray());
         }
+
+        internal const int DefaultPartitionCount = 4;
     }
+
+
 }
