@@ -39,7 +39,7 @@ namespace DurableTask.AzureStorage
     public class ExtensibleOrchestrationService :
         IOrchestrationService,
         IOrchestrationServiceClient,
-        IPartitionObserver<BlobLease>
+        IPartitionObserver
     {
         internal static readonly TimeSpan MaxQueuePollingDelay = TimeSpan.FromSeconds(10);
 
@@ -65,8 +65,8 @@ namespace DurableTask.AzureStorage
         readonly BackoffPollingHelper workItemQueueBackoff;
 
         readonly ResettableLazy<Task> taskHubCreator;
-        readonly BlobLeaseManager leaseManager;
-        readonly PartitionManager<BlobLease> partitionManager;
+        readonly ILeaseManager leaseManager;
+        readonly IPartitionManager partitionManager;
 
         readonly object hubCreationLock;
 
@@ -123,7 +123,10 @@ namespace DurableTask.AzureStorage
 
             if (customInstanceStore == null)
             {
-                this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
+                if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, settings.HistoryTableRequestOptions, this.stats);
+                else
+                    this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
             }
             else
             {
@@ -491,7 +494,7 @@ namespace DurableTask.AzureStorage
                 this.stats.ActiveActivityExecutions.Value);
         }
 
-        async Task IPartitionObserver<BlobLease>.OnPartitionAcquiredAsync(BlobLease lease)
+        async Task IPartitionObserver.OnPartitionAcquiredAsync(Lease lease)
         {
             CloudQueue controlQueue = this.queueClient.GetQueueReference(lease.PartitionId);
             await controlQueue.CreateIfNotExistsAsync();
@@ -500,7 +503,7 @@ namespace DurableTask.AzureStorage
             this.allControlQueues[lease.PartitionId] = controlQueue;
         }
 
-        Task IPartitionObserver<BlobLease>.OnPartitionReleasedAsync(BlobLease lease, CloseReason reason)
+        Task IPartitionObserver.OnPartitionReleasedAsync(Lease lease, CloseReason reason)
         {
             if (!this.ownedControlQueues.TryRemove(lease.PartitionId, out CloudQueue controlQueue))
             {
@@ -515,7 +518,7 @@ namespace DurableTask.AzureStorage
         }
 
         // Used for testing
-        internal Task<IEnumerable<BlobLease>> ListBlobLeasesAsync()
+        internal Task<IEnumerable<Lease>> ListBlobLeasesAsync()
         {
             return this.leaseManager.ListLeasesAsync();
         }

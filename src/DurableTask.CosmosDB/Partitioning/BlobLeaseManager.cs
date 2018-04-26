@@ -25,7 +25,7 @@ namespace DurableTask.AzureStorage.Partitioning
     using Microsoft.WindowsAzure.Storage.Blob.Protocol;
     using Newtonsoft.Json;
 
-    sealed class BlobLeaseManager : ILeaseManager<BlobLease>
+    sealed class BlobLeaseManager : ILeaseManager
     {
         const string TaskHubInfoBlobName = "taskhub.json";
         static readonly TimeSpan StorageMaximumExecutionTime = TimeSpan.FromMinutes(2);
@@ -101,7 +101,7 @@ namespace DurableTask.AzureStorage.Partitioning
             return result;
         }
 
-        public async Task<IEnumerable<BlobLease>> ListLeasesAsync()
+        public async Task<IEnumerable<Lease>> ListLeasesAsync()
         {
             var blobLeases = new List<BlobLease>();
 
@@ -130,10 +130,10 @@ namespace DurableTask.AzureStorage.Partitioning
             return blobLeases;
         }
 
-        public async Task CreateLeaseIfNotExistAsync(string paritionId)
+        public async Task CreateLeaseIfNotExistAsync(string partition)
         {
-            CloudBlockBlob leaseBlob = this.consumerGroupDirectory.GetBlockBlobReference(paritionId);
-            BlobLease lease = new BlobLease(leaseBlob) { PartitionId = paritionId };
+            CloudBlockBlob leaseBlob = this.consumerGroupDirectory.GetBlockBlobReference(partition);
+            BlobLease lease = new BlobLease(leaseBlob) { PartitionId = partition };
             string serializedLease = JsonConvert.SerializeObject(lease);
             try
             {
@@ -146,7 +146,7 @@ namespace DurableTask.AzureStorage.Partitioning
                         "CreateLeaseIfNotExistAsync - leaseContainerName: {0}, consumerGroupName: {1}, partitionId: {2}. blobPrefix: {3}",
                         this.leaseContainerName,
                         this.consumerGroupName,
-                        paritionId,
+                        partition,
                         this.blobPrefix ?? string.Empty));
 
                 await leaseBlob.UploadTextAsync(serializedLease, null, AccessCondition.GenerateIfNoneMatchCondition("*"), null, null);
@@ -164,7 +164,7 @@ namespace DurableTask.AzureStorage.Partitioning
                         "CreateLeaseIfNotExistAsync - leaseContainerName: {0}, consumerGroupName: {1}, partitionId: {2}, blobPrefix: {3}, exception: {4}.",
                         this.leaseContainerName,
                         this.consumerGroupName,
-                        paritionId,
+                        partition,
                         this.blobPrefix ?? string.Empty,
                         se));
             }
@@ -174,7 +174,7 @@ namespace DurableTask.AzureStorage.Partitioning
             }
         }
 
-        public async Task<BlobLease> GetLeaseAsync(string paritionId)
+        public async Task<Lease> GetLeaseAsync(string paritionId)
         {
             CloudBlockBlob leaseBlob = this.consumerGroupDirectory.GetBlockBlobReference(paritionId);
             if (await leaseBlob.ExistsAsync())
@@ -185,9 +185,9 @@ namespace DurableTask.AzureStorage.Partitioning
             return null;
         }
 
-        public async Task<bool> RenewAsync(BlobLease lease)
+        public async Task<bool> RenewAsync(Lease lease)
         {
-            CloudBlockBlob leaseBlob = lease.Blob;
+            CloudBlockBlob leaseBlob = ((BlobLease)lease).Blob;
             try
             {
                 await leaseBlob.RenewLeaseAsync(accessCondition: AccessCondition.GenerateLeaseCondition(lease.Token), options: this.renewRequestOptions, operationContext: null);
@@ -204,9 +204,9 @@ namespace DurableTask.AzureStorage.Partitioning
             return true;
         }
 
-        public async Task<bool> AcquireAsync(BlobLease lease, string owner)
+        public async Task<bool> AcquireAsync(Lease lease, string owner)
         {
-            CloudBlockBlob leaseBlob = lease.Blob;
+            CloudBlockBlob leaseBlob = ((BlobLease)lease).Blob;
             try
             {
                 await leaseBlob.FetchAttributesAsync();
@@ -236,14 +236,15 @@ namespace DurableTask.AzureStorage.Partitioning
             return true;
         }
 
-        public async Task<bool> ReleaseAsync(BlobLease lease)
+        public async Task<bool> ReleaseAsync(Lease lease)
         {
-            CloudBlockBlob leaseBlob = lease.Blob;
+            var blobLease = ((BlobLease)lease);
+            CloudBlockBlob leaseBlob = blobLease.Blob;
             try
             {
                 string leaseId = lease.Token;
 
-                BlobLease copy = new BlobLease(lease);
+                BlobLease copy = new BlobLease(blobLease);
                 copy.Token = null;
                 copy.Owner = null;
                 await leaseBlob.UploadTextAsync(JsonConvert.SerializeObject(copy), null, AccessCondition.GenerateLeaseCondition(leaseId), null, null);
@@ -260,9 +261,9 @@ namespace DurableTask.AzureStorage.Partitioning
             return true;
         }
 
-        public async Task DeleteAsync(BlobLease lease)
+        public async Task DeleteAsync(Lease lease)
         {
-            CloudBlockBlob leaseBlob = lease.Blob;
+            CloudBlockBlob leaseBlob = ((BlobLease)lease).Blob;
             try
             {
                 await leaseBlob.DeleteIfExistsAsync();
@@ -285,14 +286,14 @@ namespace DurableTask.AzureStorage.Partitioning
             }
         }
 
-        public async Task<bool> UpdateAsync(BlobLease lease)
+        public async Task<bool> UpdateAsync(Lease lease)
         {
             if (lease == null || string.IsNullOrWhiteSpace(lease.Token))
             {
                 return false;
             }
 
-            CloudBlockBlob leaseBlob = lease.Blob;
+            CloudBlockBlob leaseBlob = ((BlobLease)lease).Blob;
             try
             {
                 // First renew the lease to make sure checkpoint will go through

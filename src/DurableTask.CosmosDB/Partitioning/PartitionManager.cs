@@ -20,12 +20,12 @@ namespace DurableTask.AzureStorage.Partitioning
     using System.Threading;
     using System.Threading.Tasks;
 
-    sealed class PartitionManager<T> where T : Lease
+    sealed class PartitionManager<T> : IPartitionManager where T : Lease
     {
         readonly string accountName;
         readonly string taskHub;
         readonly string workerName;
-        readonly ILeaseManager<T> leaseManager;
+        readonly ILeaseManager leaseManager;
         readonly PartitionManagerOptions options;
         readonly ConcurrentDictionary<string, T> currentlyOwnedShards;
         readonly ConcurrentDictionary<string, T> keepRenewingDuringClose;
@@ -38,7 +38,7 @@ namespace DurableTask.AzureStorage.Partitioning
         CancellationTokenSource leaseTakerCancellationTokenSource;
         CancellationTokenSource leaseRenewerCancellationTokenSource;
 
-        public PartitionManager(string accountName, string taskHub, string workerName, ILeaseManager<T> leaseManager, PartitionManagerOptions options)
+        public PartitionManager(string accountName, string taskHub, string workerName, ILeaseManager leaseManager, PartitionManagerOptions options)
         {
             this.accountName = accountName;
             this.taskHub = taskHub;
@@ -118,7 +118,7 @@ namespace DurableTask.AzureStorage.Partitioning
             this.leaseRenewerCancellationTokenSource = null;
         }
 
-        public Task<IDisposable> SubscribeAsync(IPartitionObserver<T> observer)
+        public Task<IDisposable> SubscribeAsync(IPartitionObserver observer)
         {
             return this.partitionObserverManager.SubscribeAsync(observer);
         }
@@ -533,15 +533,15 @@ namespace DurableTask.AzureStorage.Partitioning
         sealed class PartitionObserverManager
         {
             readonly PartitionManager<T> partitionManager;
-            readonly List<IPartitionObserver<T>> observers;
+            readonly List<IPartitionObserver> observers;
 
             public PartitionObserverManager(PartitionManager<T> partitionManager)
             {
                 this.partitionManager = partitionManager;
-                this.observers = new List<IPartitionObserver<T>>();
+                this.observers = new List<IPartitionObserver>();
             }
 
-            public async Task<IDisposable> SubscribeAsync(IPartitionObserver<T> observer)
+            public async Task<IDisposable> SubscribeAsync(IPartitionObserver observer)
             {
                 if (!this.observers.Contains(observer))
                 {
@@ -583,10 +583,10 @@ namespace DurableTask.AzureStorage.Partitioning
 
         sealed class Unsubscriber : IDisposable
         {
-            readonly List<IPartitionObserver<T>> _observers;
-            readonly IPartitionObserver<T> _observer;
+            readonly List<IPartitionObserver> _observers;
+            readonly IPartitionObserver _observer;
 
-            internal Unsubscriber(List<IPartitionObserver<T>> observers, IPartitionObserver<T> observer)
+            internal Unsubscriber(List<IPartitionObserver> observers, IPartitionObserver observer)
             {
                 this._observers = observers;
                 this._observer = observer;
