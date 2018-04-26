@@ -132,7 +132,7 @@ namespace DurableTask.AzureStorage.Tests
 
                 // Need to wait for the instance to start before sending events to it.
                 // TODO: This requirement may not be ideal and should be revisited.
-                await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
+                await client.WaitForStartupAsync(TimeSpan.FromSeconds(10000));
 
                 // Perform some operations
                 await client.RaiseEventAsync("operation", "incr");

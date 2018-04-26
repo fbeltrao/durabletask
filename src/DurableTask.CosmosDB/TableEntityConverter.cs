@@ -21,6 +21,7 @@ namespace DurableTask.AzureStorage
     using System.Runtime.Serialization;
     using Microsoft.WindowsAzure.Storage.Table;
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
 
     /// <summary>
     /// Utility class for converting [DataContract] objects into DynamicTableEntity and back.
@@ -41,7 +42,7 @@ namespace DurableTask.AzureStorage
         /// <summary>
         /// Converts a data contract object into a <see cref="DynamicTableEntity"/>.
         /// </summary>
-        public DynamicTableEntity ConvertToTableEntity(object obj)
+        public JObject ConvertToTableEntity(object obj)
         {
             if (obj == null)
             {
@@ -54,16 +55,16 @@ namespace DurableTask.AzureStorage
                 obj.GetType(),
                 GetPropertyConvertersForType);
 
-            var tableEntity = new DynamicTableEntity();
+            var tableEntity = new JObject();
             foreach (PropertyConverter propertyConverter in propertyConverters)
             {
-                tableEntity.Properties[propertyConverter.PropertyName] = propertyConverter.GetEntityProperty(obj);
+                tableEntity.Add(propertyConverter.PropertyName, new JValue(propertyConverter.GetEntityProperty(obj).PropertyAsObject));
             }
 
             return tableEntity;
         }
 
-        public object ConvertFromTableEntity(DynamicTableEntity tableEntity, Func<DynamicTableEntity, Type> typeFactory)
+        public object ConvertFromTableEntity(JObject tableEntity, Func<JObject, Type> typeFactory)
         {
             if (tableEntity == null)
             {
@@ -81,15 +82,33 @@ namespace DurableTask.AzureStorage
             IReadOnlyList<PropertyConverter> propertyConverters = this.converterCache.GetOrAdd(
                 objectType,
                 GetPropertyConvertersForType);
-
-            foreach (PropertyConverter propertyConverter in propertyConverters)
+            try
             {
-                // Properties with null values are not actually saved/retrieved by table storage.
-                EntityProperty entityProperty;
-                if (tableEntity.Properties.TryGetValue(propertyConverter.PropertyName, out entityProperty))
+                foreach (PropertyConverter propertyConverter in propertyConverters)
                 {
-                    propertyConverter.SetObjectProperty(createdObject, entityProperty);
+                    var entityValue = tableEntity[propertyConverter.PropertyName];
+                    if (entityValue.Type == JTokenType.Integer)
+                    {
+                        propertyConverter.SetObjectProperty(createdObject, new EntityProperty(tableEntity[propertyConverter.PropertyName].Value<int>()));
+                    }
+                    else if (entityValue.Type == JTokenType.Boolean)
+                    {
+                        propertyConverter.SetObjectProperty(createdObject, new EntityProperty(tableEntity[propertyConverter.PropertyName].Value<bool>()));
+                    }
+                    else if(entityValue.Type == JTokenType.Date)
+                    {
+                        propertyConverter.SetObjectProperty(createdObject, new EntityProperty(tableEntity[propertyConverter.PropertyName].Value<DateTime>()));
+                    }
+                    else
+                    {
+                        propertyConverter.SetObjectProperty(createdObject, new EntityProperty(tableEntity[propertyConverter.PropertyName].Value<string>()));
+                    }
+
                 }
+            }
+            catch (Exception)
+            {
+
             }
 
             return createdObject;

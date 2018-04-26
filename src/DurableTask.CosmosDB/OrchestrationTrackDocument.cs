@@ -3,6 +3,7 @@
     using DurableTask.Core.History;
     using Microsoft.Azure.Documents;
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
     using System.Collections.Generic;
 
     /// <summary>
@@ -15,14 +16,16 @@
         /// </summary>
         public OrchestrationTrackDocument()
         {
-            History = new Dictionary<string, List<HistoryEvent>>();
+            History = new Dictionary<string, List<JObject>>();
         }
 
         /// <summary>
         /// History execution
         /// </summary>
         [JsonProperty("history")]
-        public IDictionary<string, List<HistoryEvent>> History { get; set; }
+        public IDictionary<string, List<JObject>> History { get; set; }
+
+
 
         /// <summary>
         /// This is the orchestrator instance id
