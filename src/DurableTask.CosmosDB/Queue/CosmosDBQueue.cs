@@ -1,4 +1,5 @@
-﻿using Microsoft.Azure.Documents;
+﻿using DurableTask.AzureStorage;
+using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Newtonsoft.Json;
 using System;

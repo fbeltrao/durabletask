@@ -13,6 +13,7 @@
 
 using DurableTask.AzureStorage.Partitioning;
 using Newtonsoft.Json;
+using System;
 
 namespace DurableTask.AzureStorage
 {
@@ -52,5 +53,18 @@ namespace DurableTask.AzureStorage
         /// Task hub name
         /// </summary>
         public string TaskHubName { get; set; }
+
+
+        /// <summary>
+        /// Lease timeout
+        /// </summary>
+        public long LeaseTimeout { get; set; }
+
+        /// <inheritdoc />
+        public override bool IsExpired()
+        {
+            var now = Utils.ToUnixTime(DateTime.UtcNow);
+            return this.LeaseTimeout < now;
+        }
     }
 }

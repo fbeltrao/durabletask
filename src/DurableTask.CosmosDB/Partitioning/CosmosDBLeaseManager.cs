@@ -251,6 +251,8 @@ namespace DurableTask.AzureStorage
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
+                cosmosDBLease.LeaseTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval));
+
                 var res = await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
                     cosmosDBLease,
@@ -281,11 +283,12 @@ namespace DurableTask.AzureStorage
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
+                var newTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval));
                 var res = await this.documentClient.ExecuteStoredProcedureAsync<StoredProcedureResponse<CosmosDBLease>>(
                     UriFactory.CreateStoredProcedureUri(cosmosDBName, cosmosDBLeaseManagementCollection, AcquireLeaseStoredProcedureName),
                     cosmosDBLease.Id,
                     cosmosDBLease.Token,
-                    this.leaseInterval.TotalSeconds);
+                    newTimeout);
 
 
                 // TODO: update the token
@@ -314,6 +317,7 @@ namespace DurableTask.AzureStorage
                 var copy = new CosmosDBLease(cosmosDBLease);
                 copy.Owner = null;
                 copy.Token = null;
+                copy.LeaseTimeout = 0;
 
                 var res = await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, copy.Id),
@@ -380,7 +384,7 @@ namespace DurableTask.AzureStorage
             try
             {
                 await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, leaseBlob.Id),
+                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
                     new RequestOptions
                     {
                         AccessCondition = new AccessCondition
