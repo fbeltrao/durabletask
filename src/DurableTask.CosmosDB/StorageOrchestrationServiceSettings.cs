@@ -82,5 +82,8 @@ namespace DurableTask.CosmosDB
 
         /// <inheritdoc />
         public string CosmosDBAuthKey { get; set; }
+
+        /// <inheritdoc />
+        public string CosmosDBLeaseManagementCollection { get; set; }
     }
 }

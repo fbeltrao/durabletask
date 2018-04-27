@@ -87,5 +87,10 @@ namespace DurableTask.CosmosDB
         /// CosmosDB authorization key
         /// </summary>
         string CosmosDBAuthKey { get; set; }
+
+        /// <summary>
+        /// CosmosDB lease management collection name
+        /// </summary>
+        string CosmosDBLeaseManagementCollection { get; set; }
     }
 }
