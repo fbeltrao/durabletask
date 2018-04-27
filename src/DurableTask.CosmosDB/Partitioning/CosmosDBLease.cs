@@ -37,6 +37,7 @@ namespace DurableTask.AzureStorage
         public CosmosDBLease(CosmosDBLease source) : base(source)
         {
             this.TaskHubName = source.TaskHubName;
+            this.LeaseTimeout = source.LeaseTimeout;
         }
 
         /// <summary>
