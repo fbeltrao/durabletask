@@ -548,7 +548,7 @@ namespace DurableTask.AzureStorage
         }
 
         // Used for testing
-        internal Task<IEnumerable<Lease>> ListBlobLeasesAsync()
+        internal Task<IEnumerable<Lease>> ListLeasesAsync()
         {
             return this.leaseManager.ListLeasesAsync();
         }

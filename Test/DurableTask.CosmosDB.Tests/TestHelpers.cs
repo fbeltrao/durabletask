@@ -10,9 +10,12 @@ namespace DurableTask.CosmosDB.Tests
 {
     static class TestHelpers
     {
-        public static TestOrchestrationHost GetTestOrchestrationHost(string leaseManagementCollection = null)
+        const string LeaseManagementCollectionName = "unitTestLeaseManagement";
+
+        public static TestOrchestrationHost GetTestOrchestrationHost(OrchestrationBackendType orchestrationBackendType = OrchestrationBackendType.Storage)
         {
             string storageConnectionString = GetTestStorageAccountConnectionString();
+            var leaseManagementCollection = orchestrationBackendType == OrchestrationBackendType.Storage ? null : LeaseManagementCollectionName;
 
             var service = new ExtensibleOrchestrationService(
                 new StorageOrchestrationServiceSettings
