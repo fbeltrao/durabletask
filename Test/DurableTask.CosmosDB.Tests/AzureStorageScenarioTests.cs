@@ -141,15 +141,15 @@ namespace DurableTask.CosmosDB.Tests
                 // TODO: Sleeping to avoid a race condition where multiple ContinueAsNew messages
                 //       are processed by the same instance at the same time, resulting in a corrupt
                 //       storage failure in DTFx.
-                await Task.Delay(2000);
+                await Task.Delay(5000);
                 await client.RaiseEventAsync("operation", "incr");
-                await Task.Delay(2000);
+                await Task.Delay(5000);
                 await client.RaiseEventAsync("operation", "incr");
-                await Task.Delay(2000);
+                await Task.Delay(5000);
                 await client.RaiseEventAsync("operation", "decr");
-                await Task.Delay(2000);
+                await Task.Delay(5000);
                 await client.RaiseEventAsync("operation", "incr");
-                await Task.Delay(2000);
+                await Task.Delay(5000);
 
                 // Make sure it's still running and didn't complete early (or fail).
                 var status = await client.GetStatusAsync();

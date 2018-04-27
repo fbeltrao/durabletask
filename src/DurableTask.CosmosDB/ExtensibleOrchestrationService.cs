@@ -123,9 +123,9 @@ namespace DurableTask.AzureStorage
 
             if (customInstanceStore == null)
             {
-                if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, settings.HistoryTableRequestOptions, this.stats);
-                else
+                //if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                //    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, settings.HistoryTableRequestOptions, this.stats);
+                //else
                     this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
             }
             else
@@ -1339,6 +1339,8 @@ namespace DurableTask.AzureStorage
             // Notify the control queue poller that there are new messages to process.
             // TODO: This should be specific to the one control queue
             this.controlQueueBackoff.Reset();
+
+
         }
 
         /// <summary>

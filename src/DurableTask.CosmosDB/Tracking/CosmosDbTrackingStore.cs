@@ -30,6 +30,7 @@ namespace DurableTask.CosmosDB.Tracking
     using DurableTask.AzureStorage;
     using System.Reflection;
     using System.Runtime.Serialization;
+    using System.Diagnostics;
 
     class CosmosDbTrackingStore : TrackingStoreBase
     {
@@ -47,6 +48,7 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 TypeNameHandling = TypeNameHandling.All,
             });
+            
 
             this.instancesCollectionName = instanceCollection;
             this.historyCollectionName = historyCollection;
@@ -91,19 +93,19 @@ namespace DurableTask.CosmosDB.Tracking
 
         }
 
-        public override async Task DeleteAsync()
+        public override Task DeleteAsync()
         {
-            try
-            {
-                await this.documentClient.DeleteDocumentCollectionAsync(this.historyCollectionName);
-                await this.documentClient.DeleteDocumentCollectionAsync(this.instancesCollectionName);
-            }
-            catch (Exception)
-            {
+            //try
+            //{
+            //    await this.documentClient.DeleteDocumentCollectionAsync(this.historyCollectionName);
+            //    await this.documentClient.DeleteDocumentCollectionAsync(this.instancesCollectionName);
+            //}
+            //catch (Exception)
+            //{
 
-            }
+            //}
 
-
+            return Task.FromResult(0);
         }
 
         public override async Task<bool> ExistsAsync()
@@ -160,20 +162,16 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task<IList<OrchestrationState>> GetStateAsync(string instanceId, bool allExecutions)
         {
-            List<OrchestrationState> result = new List<OrchestrationState>();
-
-            OrchestrationStateDocument document = await GetDocumentStateAsync(instanceId);
-            if (document != null)
-            {
-                result = document.Executions.Values.ToList();
-            }
-
-            return result;
-
+            return new[] { await this.GetStateAsync(instanceId, executionId: null) };
         }
 
         public override async Task<OrchestrationState> GetStateAsync(string instanceId, string executionId)
         {
+            if (instanceId == null)
+            {
+                throw new ArgumentNullException(nameof(instanceId));
+            }
+
             OrchestrationState result = null;
 
             OrchestrationStateDocument document = await GetDocumentStateAsync(instanceId);
@@ -185,7 +183,7 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 result = document.Executions.Values.FirstOrDefault();
             }
-
+            Trace.WriteLine($"ReadState {result.OrchestrationStatus}");
             return result;
         }
 
@@ -218,57 +216,34 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task SetNewExecutionAsync(ExecutionStartedEvent executionStartedEvent)
         {
-            OrchestrationTrackDocument document = await GetHistoryDocument(executionStartedEvent.OrchestrationInstance.InstanceId);
-            if (document == null)
+            OrchestrationStateDocument value = await GetDocumentStateAsync(executionStartedEvent.OrchestrationInstance.InstanceId);
+            if (value == null)
             {
-                document = new OrchestrationTrackDocument();
-                document.InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId;
+                value = new OrchestrationStateDocument()
+                {
+                    InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId,
+                };
+
+                value.Executions = new Dictionary<string, OrchestrationState>();
             }
 
-            string executionId = executionStartedEvent.OrchestrationInstance.ExecutionId;
-            if (!document.History.ContainsKey(executionId))
-            {
-                document.History.Add(executionId, new List<JObject>());
-            }
-
-            document.History[executionId].Add(new JsonEntityConverter().ConvertToTableEntity(executionStartedEvent));
-            document.SetPropertyValue("history", document.History);
-
-            await SaveHistoryDocument(document);
-            await SaveExecutionInstance(executionStartedEvent);
-        }
-
-        private async Task SaveExecutionInstance(ExecutionStartedEvent executionStartedEvent)
-        {
-            var stateDocument = await GetDocumentStateAsync(executionStartedEvent.OrchestrationInstance.InstanceId);
-
-            OrchestrationState newState = new OrchestrationState()
+            value.Executions.Add(executionStartedEvent.OrchestrationInstance.ExecutionId, new OrchestrationState()
             {
                 OrchestrationInstance = new OrchestrationInstance
                 {
                     InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId,
                     ExecutionId = executionStartedEvent.OrchestrationInstance.ExecutionId,
                 },
-                CreatedTime = DateTime.UtcNow,
-                OrchestrationStatus = OrchestrationStatus.Pending,
-                Version = executionStartedEvent.Version,
-                Name = executionStartedEvent.Name,
                 Input = executionStartedEvent.Input,
-            };
+                CreatedTime = executionStartedEvent.Timestamp,
+                Name = executionStartedEvent.Name,
+                Version = executionStartedEvent.Version,
+                LastUpdatedTime = executionStartedEvent.Timestamp,
+                Status = OrchestrationStatus.Pending.ToString()
+            });
 
-
-            if (stateDocument == null)
-            {
-                stateDocument = new OrchestrationStateDocument()
-                {
-                    InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId
-                };
-                stateDocument.Executions = new Dictionary<string, OrchestrationState>();
-            }
-
-            newState.LastUpdatedTime = DateTime.UtcNow;
-            stateDocument.Executions[newState.OrchestrationInstance.ExecutionId] = newState;
-            ResourceResponse<Document> result = await UpsertOrchestrationState(stateDocument);
+            value.SetPropertyValue("executions", value.Executions);
+            await UpsertOrchestrationState(value);
         }
 
         private async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument value)
@@ -322,6 +297,18 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
         {
+            OrchestrationTrackDocument document = await GetHistoryDocument(instanceId);
+            if (document == null)
+            {
+                document = new OrchestrationTrackDocument();
+                document.InstanceId = instanceId;
+            }
+
+            if (!document.History.ContainsKey(executionId))
+            {
+                document.History.Add(executionId, new List<JObject>());
+            }
+
             OrchestrationStateDocument value = await GetDocumentStateAsync(instanceId);
             if (value == null)
             {
@@ -332,32 +319,74 @@ namespace DurableTask.CosmosDB.Tracking
 
                 value.Executions = new Dictionary<string, OrchestrationState>();
             }
+            EventType? orchestratorEventType = null;
+            OrchestrationState state;
+            if (!string.IsNullOrEmpty(executionId) && value.Executions.ContainsKey(executionId))
+            {
+                state = value.Executions[executionId];
+            }
+            else
+            {
+                state = new OrchestrationState();
+            }
+
+            foreach (var historyEvent in runtimeState.NewEvents)
+            {
+                Trace.WriteLine($"EventType: {historyEvent.EventType}");
+                document.History[executionId].Add(new JsonEntityConverter().ConvertToTableEntity(historyEvent));
+
+                switch (historyEvent.EventType)
+                {
+                    case EventType.ExecutionStarted:
+                        orchestratorEventType = historyEvent.EventType;
+                        ExecutionStartedEvent executionStartedEvent = (ExecutionStartedEvent)historyEvent;
+                        state.Name = executionStartedEvent.Name;
+                        state.Version = executionStartedEvent.Version;
+                        state.CreatedTime = executionStartedEvent.Timestamp;
+                        state.Status = OrchestrationStatus.Running.ToString();
+                        state.OrchestrationStatus = OrchestrationStatus.Running;
+                        state.Input = executionStartedEvent.Input;
+                        break;
+                    case EventType.ExecutionCompleted:
+                        orchestratorEventType = historyEvent.EventType;
+                        ExecutionCompletedEvent executionCompleted = (ExecutionCompletedEvent)historyEvent;
+                        state.Status = executionCompleted.OrchestrationStatus.ToString();
+                        state.OrchestrationStatus = executionCompleted.OrchestrationStatus;
+                        state.Output = executionCompleted.Result;
+
+                        break;
+                    case EventType.ExecutionTerminated:
+                        orchestratorEventType = historyEvent.EventType;
+                        ExecutionTerminatedEvent executionTerminatedEvent = (ExecutionTerminatedEvent)historyEvent;
+                        state.Input = executionTerminatedEvent.Input;
+                        state.Status = OrchestrationStatus.Terminated.ToString();
+                        state.OrchestrationStatus = OrchestrationStatus.Terminated;
+                        break;
+                    case EventType.ContinueAsNew:
+                        orchestratorEventType = historyEvent.EventType;
+                        ExecutionCompletedEvent executionCompletedEvent = (ExecutionCompletedEvent)historyEvent;
+                        state.Output = executionCompletedEvent.Result;
+                        state.Status = OrchestrationStatus.ContinuedAsNew.ToString();
+                        state.OrchestrationStatus = OrchestrationStatus.ContinuedAsNew;
+                        break;
+                }
+            }
+
+            document.SetPropertyValue("history", document.History);
+            await SaveHistoryDocument(document);
 
 
-            value.Executions[runtimeState.OrchestrationInstance.ExecutionId] = ConvertRochestrationRuntimeState(runtimeState);
+            if (!value.Executions.ContainsKey(executionId))
+            {
+                value.Executions.Add(executionId, state);
+            }
+            else
+            {
+                value.Executions[executionId] = state;
+            }
+
             value.SetPropertyValue("executions", value.Executions);
             await UpsertOrchestrationState(value);
-        }
-
-        private OrchestrationState ConvertRochestrationRuntimeState(OrchestrationRuntimeState value)
-        {
-            return new OrchestrationState()
-            {
-                CompletedTime = value.CompletedTime,
-                CompressedSize = value.CompressedSize,
-                CreatedTime = value.CreatedTime,
-                Input = value.Input,
-                LastUpdatedTime = DateTime.UtcNow,
-                Name = value.Name,
-                OrchestrationInstance = value.OrchestrationInstance,
-                OrchestrationStatus = value.OrchestrationStatus,
-                Output = value.Output,
-                ParentInstance = value.ParentInstance,
-                Size = value.Size,
-                Status = value.Status,
-                Tags = value.Tags,
-                Version = value.Version
-            };
         }
     }
 }

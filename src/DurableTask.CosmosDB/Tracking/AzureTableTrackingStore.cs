@@ -293,7 +293,7 @@ namespace DurableTask.CosmosDB.Tracking
                 this.GetOrchestrationOutputAsync(orchestrationInstanceStatus));
             orchestrationState.Input = results[0];
             orchestrationState.Output = results[1];
-
+            Trace.WriteLine($"ReadState {orchestrationState.OrchestrationStatus}");
             return orchestrationState;
         }
 
@@ -368,6 +368,7 @@ namespace DurableTask.CosmosDB.Tracking
             for (int i = 0; i < newEvents.Count; i++)
             {
                 HistoryEvent historyEvent = newEvents[i];
+                Trace.WriteLine($"EventType: {historyEvent.EventType}");
                 DynamicTableEntity entity = this.tableEntityConverter.ConvertToTableEntity(historyEvent);
 
                 await this.CompressLargeMessageAsync(entity);
@@ -433,6 +434,7 @@ namespace DurableTask.CosmosDB.Tracking
             }
 
             Stopwatch orchestrationInstanceUpdateStopwatch = Stopwatch.StartNew();
+            
             await this.instancesTable.ExecuteAsync(TableOperation.InsertOrMerge(orchestrationInstanceUpdate));
 
             this.stats.StorageRequests.Increment();
