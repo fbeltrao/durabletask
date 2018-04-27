@@ -366,6 +366,8 @@ namespace DurableTask.CosmosDB.Tests
                 StorageConnectionString = TestHelpers.GetTestStorageAccountConnectionString(),
                 TaskHubName = nameof(MonitorIdleTaskHubDisconnected),
                 PartitionCount = 4,
+                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
             };
 
             var service = new ExtensibleOrchestrationService(settings);
