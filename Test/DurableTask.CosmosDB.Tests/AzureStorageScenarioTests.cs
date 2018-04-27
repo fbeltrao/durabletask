@@ -15,6 +15,7 @@ namespace DurableTask.CosmosDB.Tests
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Runtime.Serialization;
@@ -136,22 +137,22 @@ namespace DurableTask.CosmosDB.Tests
 
                 // Need to wait for the instance to start before sending events to it.
                 // TODO: This requirement may not be ideal and should be revisited.
-                await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
+                await client.WaitForStartupAsync(TimeSpan.FromSeconds(20));
 
                 // Perform some operations
-                await client.RaiseEventAsync("operation", "incr");
+                await client.RaiseEventAsync("operation", "incr1");
 
                 // TODO: Sleeping to avoid a race condition where multiple ContinueAsNew messages
                 //       are processed by the same instance at the same time, resulting in a corrupt
                 //       storage failure in DTFx.
                 await Task.Delay(5000);
-                await client.RaiseEventAsync("operation", "incr");
+                await client.RaiseEventAsync("operation", "incr2");
                 await Task.Delay(5000);
-                await client.RaiseEventAsync("operation", "incr");
+                await client.RaiseEventAsync("operation", "incr3");
                 await Task.Delay(5000);
-                await client.RaiseEventAsync("operation", "decr");
+                await client.RaiseEventAsync("operation", "decr4");
                 await Task.Delay(5000);
-                await client.RaiseEventAsync("operation", "incr");
+                await client.RaiseEventAsync("operation", "incr5");
                 await Task.Delay(5000);
 
                 // Make sure it's still running and didn't complete early (or fail).
@@ -719,15 +720,21 @@ namespace DurableTask.CosmosDB.Tests
 
                 public override async Task<int> RunTask(OrchestrationContext context, int currentValue)
                 {
+
                     string operation = await this.WaitForOperation();
+
+                    Trace.WriteLine($"CounterFunction: {operation}");
 
                     bool done = false;
                     switch (operation?.ToLowerInvariant())
                     {
-                        case "incr":
+                        case "incr1":
+                        case "incr2":
+                        case "incr3":
+                        case "incr5":
                             currentValue++;
                             break;
-                        case "decr":
+                        case "decr4":
                             currentValue--;
                             break;
                         case "end":
@@ -753,6 +760,7 @@ namespace DurableTask.CosmosDB.Tests
 
                 public override void OnEvent(OrchestrationContext context, string name, string input)
                 {
+                    Trace.WriteLine($"CounterFunction OnEvent: {name}, {input}");
                     Assert.AreEqual("operation", name, true, "Unknown signal recieved...");
                     if (this.waitForOperationHandle != null)
                     {

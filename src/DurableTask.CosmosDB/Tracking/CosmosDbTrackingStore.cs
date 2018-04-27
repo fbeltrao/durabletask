@@ -129,10 +129,6 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 list = documentHistory.History[expectedExecutionId];
             }
-            else if (documentHistory != null)
-            {
-                list = documentHistory.History.Values.FirstOrDefault();
-            }
 
             if (list != null)
             {
@@ -183,7 +179,7 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 result = document.Executions.Values.FirstOrDefault();
             }
-            Trace.WriteLine($"ReadState {result.OrchestrationStatus}");
+            Trace.WriteLine($"ReadState {result.OrchestrationStatus} | {result.Status}");
             return result;
         }
 
@@ -239,7 +235,8 @@ namespace DurableTask.CosmosDB.Tracking
                 Name = executionStartedEvent.Name,
                 Version = executionStartedEvent.Version,
                 LastUpdatedTime = executionStartedEvent.Timestamp,
-                Status = OrchestrationStatus.Pending.ToString()
+                Status = OrchestrationStatus.Pending.ToString(),
+                OrchestrationStatus = OrchestrationStatus.Pending
             });
 
             value.SetPropertyValue("executions", value.Executions);

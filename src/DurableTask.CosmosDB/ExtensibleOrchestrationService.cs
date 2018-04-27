@@ -125,9 +125,9 @@ namespace DurableTask.AzureStorage
 
             if (customInstanceStore == null)
             {
-                if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
-                else
+                //if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                //    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
+                //else
                     this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
             }
             else
@@ -646,6 +646,9 @@ namespace DurableTask.AzureStorage
                 instance.ExecutionId,
                 cancellationToken);
 
+            
+
+
             var orchestrationWorkItem = new TaskOrchestrationWorkItem
             {
                 InstanceId = instance.InstanceId,
@@ -657,6 +660,12 @@ namespace DurableTask.AzureStorage
             // Associate this message context with the work item. We'll restore it back later.
             messageContext.TrySave(orchestrationWorkItem);
 
+            foreach (var message in nextBatch.Messages)
+            {
+                Trace.WriteLine($"MessageBatch: {message.OriginalQueueMessage.AsString}");
+            }
+
+
             if (runtimeState.ExecutionStartedEvent != null &&
                 runtimeState.OrchestrationStatus != OrchestrationStatus.Running &&
                 runtimeState.OrchestrationStatus != OrchestrationStatus.Pending)
@@ -667,6 +676,8 @@ namespace DurableTask.AzureStorage
                 await this.ReleaseTaskOrchestrationWorkItemAsync(orchestrationWorkItem);
                 return null;
             }
+
+            
 
             return orchestrationWorkItem;
         }
