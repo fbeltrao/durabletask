@@ -78,10 +78,13 @@ namespace DurableTask.CosmosDB.Tests
         /// <summary>
         /// End-to-end test which validates function chaining by implementing a naive factorial function orchestration.
         /// </summary>
+        [DataTestMethod]
+        [DataRow(null)]
+        [DataRow("leaseManagement")]
         [TestMethod]
-        public async Task SequentialOrchestration()
+        public async Task SequentialOrchestration(string leaseManagementCollection = null)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(leaseManagementCollection))
             {
                 await host.StartAsync();
 
