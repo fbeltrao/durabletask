@@ -24,6 +24,7 @@ namespace DurableTask.CosmosDB.Tests
     using DurableTask.AzureStorage.Monitoring;
     using DurableTask.AzureStorage.Partitioning;
     using DurableTask.Core;
+    using DurableTask.CosmosDB.Monitoring;
     using DurableTask.CosmosDB.Tracking;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using Microsoft.WindowsAzure.Storage;
@@ -368,7 +369,7 @@ namespace DurableTask.CosmosDB.Tests
             };
 
             var service = new ExtensibleOrchestrationService(settings);
-            var monitor = new DisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
+            var monitor = new StorageDisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
 
             await service.DeleteAsync();
 
@@ -421,7 +422,7 @@ namespace DurableTask.CosmosDB.Tests
 
             var service = new ExtensibleOrchestrationService(settings);
 
-            var monitor = new DisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
+            var monitor = new StorageDisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
             int simulatedWorkerCount = 0;
             await service.CreateAsync();
 
@@ -453,7 +454,7 @@ namespace DurableTask.CosmosDB.Tests
                 TimeSpan currentTotalLatency = TimeSpan.FromTicks(heartbeat.ControlQueueLatencies.Sum(ts => ts.Ticks));
                 Assert.IsTrue(currentTotalLatency > previousTotalLatency);
 
-                if (i + 1 < DisconnectedPerformanceMonitor.QueueLengthSampleSize)
+                if (i + 1 < StorageDisconnectedPerformanceMonitor.QueueLengthSampleSize)
                 {
                     int queuesWithNonZeroLatencies = heartbeat.ControlQueueLatencies.Count(t => t > TimeSpan.Zero);
                     Assert.IsTrue(queuesWithNonZeroLatencies > 0 && queuesWithNonZeroLatencies <= i);
@@ -963,7 +964,7 @@ namespace DurableTask.CosmosDB.Tests
             }
         }
 
-        class FakePerformanceMonitor : DisconnectedPerformanceMonitor
+        class FakePerformanceMonitor : StorageDisconnectedPerformanceMonitor
         {
             public FakePerformanceMonitor(
                 string storageConnectionString,

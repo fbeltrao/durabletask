@@ -63,6 +63,13 @@ namespace DurableTask.AzureStorage
                     new RequestOptions { OfferThroughput = collectionDefinition.Throughput });
             }
         }
+
+
+        static DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        internal static long ToUnixTime(DateTime date)
+        {
+            return Convert.ToInt64((date - epoch).TotalSeconds);
+        }
     }
 
 

@@ -85,7 +85,7 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         public async Task SequentialOrchestration(string leaseManagementCollection = null)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(leaseManagementCollection))
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(leaseManagementCollection: leaseManagementCollection))
             {
                 await host.StartAsync();
 
@@ -105,9 +105,12 @@ namespace DurableTask.CosmosDB.Tests
         /// in parallel and getting the sum total of all file sizes.
         /// </summary>
         [TestMethod]
-        public async Task ParallelOrchestration()
+        [DataTestMethod]
+        //[DataRow(null)]
+        [DataRow("leaseManagement")]
+        public async Task ParallelOrchestration(string leaseManagementCollection = null)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(leaseManagementCollection: leaseManagementCollection))
             {
                 await host.StartAsync();
 

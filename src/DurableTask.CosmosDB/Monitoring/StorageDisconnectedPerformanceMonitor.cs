@@ -16,15 +16,15 @@ namespace DurableTask.AzureStorage.Monitoring
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Text;
     using System.Threading.Tasks;
+    using DurableTask.CosmosDB.Monitoring;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Queue;
 
     /// <summary>
     /// Utility class for collecting performance information for a Durable Task hub without actually running inside a Durable Task worker.
     /// </summary>
-    public class DisconnectedPerformanceMonitor
+    public class StorageDisconnectedPerformanceMonitor : IDisconnectedPerformanceMonitor
     {
         internal const int QueueLengthSampleSize = 5;
         internal const int MaxMessagesPerWorkerRatio = 100;
@@ -45,21 +45,21 @@ namespace DurableTask.AzureStorage.Monitoring
         int[] currentControlQueueLengths;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="DisconnectedPerformanceMonitor"/> class.
+        /// Initializes a new instance of the <see cref="StorageDisconnectedPerformanceMonitor"/> class.
         /// </summary>
         /// <param name="storageConnectionString">The connection string for the Azure Storage account to monitor.</param>
         /// <param name="taskHub">The name of the task hub within the specified storage account.</param>
-        public DisconnectedPerformanceMonitor(string storageConnectionString, string taskHub)
+        public StorageDisconnectedPerformanceMonitor(string storageConnectionString, string taskHub)
             : this(CloudStorageAccount.Parse(storageConnectionString), taskHub)
         {
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="DisconnectedPerformanceMonitor"/> class.
+        /// Initializes a new instance of the <see cref="StorageDisconnectedPerformanceMonitor"/> class.
         /// </summary>
         /// <param name="storageAccount">The Azure Storage account to monitor.</param>
         /// <param name="taskHub">The name of the task hub within the specified storage account.</param>
-        public DisconnectedPerformanceMonitor(CloudStorageAccount storageAccount, string taskHub)
+        public StorageDisconnectedPerformanceMonitor(CloudStorageAccount storageAccount, string taskHub)
         {
             this.storageAccount = storageAccount;
             this.taskHub = taskHub;
@@ -352,165 +352,6 @@ namespace DurableTask.AzureStorage.Monitoring
         static bool IsIdle(QueueMetricHistory history)
         {
             return history.IsAllZeros();
-        }
-
-        /// <summary>
-        /// Data structure containing the number of partitions and the aggregate
-        /// number of messages across those control queue partitions.
-        /// </summary>
-        public struct ControlQueueData
-        {
-            /// <summary>
-            /// Gets or sets the number of control queue partitions.
-            /// </summary>
-            public int PartitionCount { get; internal set; }
-
-            /// <summary>
-            /// Gets or sets the number of messages across all control queues.
-            /// </summary>
-            public int AggregateQueueLength { get; internal set; }
-        }
-
-        /// <summary>
-        /// Data structure containing scale-related statistics for the work-item queue.
-        /// </summary>
-        public struct WorkItemQueueData
-        {
-            /// <summary>
-            /// Gets or sets the number of messages in the work-item queue.
-            /// </summary>
-            public int QueueLength { get; internal set; }
-
-            /// <summary>
-            /// Gets or sets the age of the first message in the work-item queue.
-            /// </summary>
-            public TimeSpan FirstMessageAge { get; internal set; }
-        }
-
-        internal class QueueMetricHistory
-        {
-            const double TrendThreshold = 0.0;
-
-            readonly int[] history;
-            int next;
-            int count;
-            int latestValue;
-            int previousValue;
-            double? currentTrend;
-
-            public QueueMetricHistory(int maxSize)
-            {
-                this.history = new int[maxSize];
-            }
-
-            public bool IsFull
-            {
-                get { return this.count == this.history.Length; }
-            }
-
-            public int Latest => this.latestValue;
-
-            public int Previous => this.previousValue;
-
-            public bool IsTrendingUpwards => this.CurrentTrend > TrendThreshold;
-
-            public bool IsTrendingDownwards => this.CurrentTrend < -TrendThreshold;
-
-            public double CurrentTrend
-            {
-                get
-                {
-                    if (!this.IsFull)
-                    {
-                        return 0.0;
-                    }
-
-                    if (!this.currentTrend.HasValue)
-                    {
-                        int firstIndex = this.IsFull ? this.next : 0;
-                        int first = this.history[firstIndex];
-                        if (first == 0)
-                        {
-                            // discard trend information when the first item is a zero.
-                            this.currentTrend = 0.0;
-                        }
-                        else
-                        {
-                            int sum = 0;
-                            for (int i = 0; i < this.history.Length; i++)
-                            {
-                                sum += this.history[i];
-                            }
-
-                            double average = (double)sum / this.history.Length;
-                            this.currentTrend = (average - first) / first;
-                        }
-                    }
-
-                    return this.currentTrend.Value;
-                }
-            }
-
-            public void Add(int value)
-            {
-                this.history[this.next++] = value;
-                if (this.count < this.history.Length)
-                {
-                    this.count++;
-                }
-
-                if (this.next >= this.history.Length)
-                {
-                    this.next = 0;
-                }
-
-                this.previousValue = this.latestValue;
-                this.latestValue = value;
-
-                // invalidate any existing trend information
-                this.currentTrend = null;
-            }
-
-            public bool IsAllZeros()
-            {
-                return Array.TrueForAll(this.history, i => i == 0);
-            }
-
-            public bool TrueForAll(Predicate<int> predicate)
-            {
-                return Array.TrueForAll(this.history, predicate);
-            }
-
-            public override string ToString()
-            {
-                var builder = new StringBuilder();
-                builder.Append('[');
-
-                for (int i = 0; i < this.history.Length; i++)
-                {
-                    int index = (i + this.next) % this.history.Length;
-                    builder.Append(this.history[index]).Append(',');
-                }
-
-                builder.Remove(builder.Length - 1, 1).Append(']');
-                return builder.ToString();
-            }
-
-            static void ThrowIfNegative(string paramName, double value)
-            {
-                if (value < 0.0)
-                {
-                    throw new ArgumentOutOfRangeException(paramName, value, $"{paramName} cannot be negative.");
-                }
-            }
-
-            static void ThrowIfPositive(string paramName, double value)
-            {
-                if (value > 0.0)
-                {
-                    throw new ArgumentOutOfRangeException(paramName, value, $"{paramName} cannot be positive.");
-                }
-            }
         }
     }
 }

@@ -172,15 +172,27 @@ namespace DurableTask.AzureStorage
             }
             else
             {
-                //this.leaseManager = new CosmosDBLeaseManager(
-                //    settings.TaskHubName,
-                //    settings.WorkerId,
-                //    settings.CosmosDBEndpoint,
-                //    settings.CosmosDBAuthKey,
-                //    settings.CosmosDBLeaseManagementCollection,
-                //    settings.LeaseInterval,
-                //    settings.LeaseRenewInterval,
-                //    this.stats);
+                this.leaseManager = new CosmosDBLeaseManager(
+                    settings.TaskHubName,
+                    settings.WorkerId,
+                    settings.CosmosDBEndpoint,
+                    settings.CosmosDBAuthKey,
+                    settings.CosmosDBLeaseManagementCollection,
+                    settings.LeaseInterval,
+                    settings.LeaseRenewInterval,
+                    this.stats);
+
+                this.partitionManager = new PartitionManager<CosmosDBLease>(
+                    settings.CosmosDBLeaseManagementCollection,
+                    this.settings.TaskHubName,
+                    settings.WorkerId,
+                    this.leaseManager,
+                    new PartitionManagerOptions
+                    {
+                        AcquireInterval = settings.LeaseAcquireInterval,
+                        RenewInterval = settings.LeaseRenewInterval,
+                        LeaseInterval = settings.LeaseInterval,
+                    });
             }
         }
 
