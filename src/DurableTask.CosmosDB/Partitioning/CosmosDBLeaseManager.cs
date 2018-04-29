@@ -148,24 +148,36 @@ namespace DurableTask.AzureStorage
         public async Task<IEnumerable<Lease>> ListLeasesAsync()
         {
             var leases = new List<CosmosDBLease>();
-
-            var feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
-                UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
-                .Where(d => d.TaskHubName == taskHubName)
-                .AsDocumentQuery();
-
-            while (feed.HasMoreResults)
+            try
             {
-                FeedResponse<Document> items = await feed.ExecuteNextAsync<Document>();
-                foreach (var f in items)
+
+                var feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
+                    UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
+                    .Where(d => d.TaskHubName == taskHubName)
+                    .AsDocumentQuery();
+
+                while (feed.HasMoreResults)
                 {
-                    var l = JsonConvert.DeserializeObject<CosmosDBLease>(f.ToString());
-                    l.Token = f.ETag;
-                    leases.Add(l);
+                    FeedResponse<Document> items = await feed.ExecuteNextAsync<Document>();
+                    foreach (var f in items)
+                    {
+                        var l = JsonConvert.DeserializeObject<CosmosDBLease>(f.ToString());
+                        l.Token = f.ETag;
+                        leases.Add(l);
+                    }
                 }
             }
+            catch (DocumentClientException ex)
+            {
+                if (ex.StatusCode != HttpStatusCode.NotFound)
+                    throw;
+            }
+            finally
+            {
+                this.stats.CosmosDBRequests.Increment();
+            }
             
-            return leases;
+            return leases.OrderBy(x => x.PartitionId);
         }
 
         public async Task CreateLeaseIfNotExistAsync(string partition)
@@ -343,7 +355,7 @@ namespace DurableTask.AzureStorage
 
 
                 var res = await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, desiredLeaseState.Id),
+                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
                     desiredLeaseState,
                     new RequestOptions
                     {
@@ -377,7 +389,15 @@ namespace DurableTask.AzureStorage
             try
             {
                 await this.documentClient.DeleteDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, cosmosDBLease.Id));
+                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, cosmosDBLease.Id),
+                    new RequestOptions
+                    {
+                        AccessCondition = new AccessCondition
+                        {
+                            Condition = cosmosDBLease.Token,
+                            Type = AccessConditionType.IfMatch
+                        }
+                    });
             }
             finally
             {
@@ -385,19 +405,21 @@ namespace DurableTask.AzureStorage
             }
         }
 
-        public Task DeleteAllAsync()
+        public async Task DeleteAllAsync()
         {
             try
             {
-
-                // TODO: delete task hub info
+                // for now just loop through leases and delete them
+                // Better solution would be to call a stored procedure that will do it in a single batch
+                foreach (var lease in await this.ListLeasesAsync())
+                {
+                    await DeleteAsync(lease);
+                }
             }
             finally
             {
-                //this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDBRequests.Increment();
             }
-
-            return Task.FromResult<object>(null);
         }
 
         public async Task<bool> UpdateAsync(Lease lease)

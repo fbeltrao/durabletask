@@ -370,9 +370,12 @@ namespace DurableTask.CosmosDB.Tests
         /// Fan-out/fan-in test which ensures each operation is run only once.
         /// </summary>
         [TestMethod]
-        public async Task FanOutToTableStorage()
+        [DataTestMethod]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        [DataRow(OrchestrationBackendType.Storage)]
+        public async Task FanOutToTableStorage(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 

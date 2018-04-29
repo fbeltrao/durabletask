@@ -43,18 +43,37 @@ namespace DurableTask.CosmosDB.Tests
         /// Basic validation of task hub creation.
         /// </summary>
         [TestMethod]
-        public async Task CreateTaskHub()
+        public async Task CreateStorageTaskHub()
         {
-            await this.EnsureStorageBasedTaskHubAsync(nameof(CreateTaskHub), testDeletion: false);
+            await this.EnsureStorageBasedTaskHubAsync(nameof(CreateStorageTaskHub), testDeletion: false);
+        }
+
+
+        /// <summary>
+        /// Basic validation of task hub creation.
+        /// </summary>
+        [TestMethod]
+        public async Task CreateCosmosDBTaskHub()
+        {
+            await this.EnsureCosmosDBBasedTaskHubAsync(nameof(CreateCosmosDBTaskHub), testDeletion: false);
         }
 
         /// <summary>
         /// Basic validation of task hub deletion.
         /// </summary>
         [TestMethod]
-        public async Task DeleteTaskHub()
+        public async Task DeleteStorageTaskHub()
         {
-            await this.EnsureStorageBasedTaskHubAsync(nameof(DeleteTaskHub), testDeletion: true);
+            await this.EnsureStorageBasedTaskHubAsync(nameof(DeleteStorageTaskHub), testDeletion: true);
+        }
+
+        /// <summary>
+        /// Basic validation of task hub deletion.
+        /// </summary>
+        [TestMethod]
+        public async Task DeleteCosmosDBTaskHub()
+        {
+            await this.EnsureCosmosDBBasedTaskHubAsync(nameof(DeleteCosmosDBTaskHub), testDeletion: true);
         }
 
         async Task<ExtensibleOrchestrationService> EnsureStorageBasedTaskHubAsync(
@@ -179,9 +198,6 @@ namespace DurableTask.CosmosDB.Tests
                 CosmosDBLeaseManagementCollection = $"{testName}Lease"
             };
 
-            settings.LeaseRenewInterval = TimeSpan.FromSeconds(5);
-            settings.LeaseAcquireInterval = TimeSpan.FromSeconds(5);
-
             Trace.TraceInformation($"Task Hub name: {taskHubName}");
 
             var service = new ExtensibleOrchestrationService(settings);
@@ -274,7 +290,7 @@ namespace DurableTask.CosmosDB.Tests
         /// </summary>
         [TestMethod]
         [DataTestMethod]
-        //[DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task MultiWorkerLeaseMovement(OrchestrationBackendType orchestrationBackendType)
         {
@@ -342,7 +358,7 @@ namespace DurableTask.CosmosDB.Tests
                         .ToArray();
 
                     Array.ForEach(leases, lease => Trace.TraceInformation(
-                        $"Blob: {lease.Name}, State: {lease.State}, Owner: {lease.Owner}"));
+                        $"Leases: {lease.Name}, State: {lease.State}, Owner: {lease.Owner}"));
 
                     isBalanced = false;
                     var workersWithLeases = leases.GroupBy(l => l.Owner).ToArray();
@@ -370,7 +386,7 @@ namespace DurableTask.CosmosDB.Tests
 
                                 foreach (CloudQueue controlQueue in service.OwnedControlQueues)
                                 {
-                                    Assert.IsTrue(allQueueNames.Add(controlQueue.Name));
+                                    Assert.IsTrue(allQueueNames.Add(controlQueue.Name), $"Mismatch between owned control queues and all queues {controlQueue.Name}, all: {string.Join(",", allQueueNames)}");
                                 }
                                 
                                 Trace.TraceInformation(
