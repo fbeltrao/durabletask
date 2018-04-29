@@ -125,9 +125,9 @@ namespace DurableTask.AzureStorage
 
             if (customInstanceStore == null)
             {
-                if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
-                else
+                //if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                //    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
+                //else
                     this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
             }
             else

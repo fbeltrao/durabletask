@@ -134,6 +134,7 @@ namespace DurableTask.CosmosDB.Tests
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task ActorOrchestration(OrchestrationBackendType orchestrationBackendType)
         {
+
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
@@ -151,15 +152,15 @@ namespace DurableTask.CosmosDB.Tests
                 // TODO: Sleeping to avoid a race condition where multiple ContinueAsNew messages
                 //       are processed by the same instance at the same time, resulting in a corrupt
                 //       storage failure in DTFx.
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "incr2");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "incr3");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "decr4");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "incr5");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
 
                 // Make sure it's still running and didn't complete early (or fail).
                 var status = await client.GetStatusAsync();
@@ -483,7 +484,7 @@ namespace DurableTask.CosmosDB.Tests
                 string currentDirectory = Directory.GetCurrentDirectory();
                 string originalFilePath = Path.Combine(currentDirectory, originalFileName);
                 byte[] readBytes = File.ReadAllBytes(originalFilePath);
-                
+
                 var client = await host.StartOrchestrationAsync(typeof(Orchestrations.EchoBytes), readBytes);
                 var status = await client.WaitForCompletionAsync(TimeSpan.FromMinutes(1));
 

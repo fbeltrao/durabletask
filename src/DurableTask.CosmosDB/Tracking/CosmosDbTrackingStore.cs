@@ -48,7 +48,7 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 TypeNameHandling = TypeNameHandling.All,
             });
-            
+
 
             this.instancesCollectionName = instanceCollection;
             this.historyCollectionName = historyCollection;
@@ -129,6 +129,13 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 list = documentHistory.History[expectedExecutionId];
             }
+            else if (documentHistory != null && string.IsNullOrEmpty(expectedExecutionId))
+            {
+                foreach (var historyItem in documentHistory.History.Last().Value)
+                {
+                    result.Add((HistoryEvent)converter.ConvertFromTableEntity(historyItem, GetTypeForJsonObject));
+                }
+            }
 
             if (list != null)
             {
@@ -137,7 +144,7 @@ namespace DurableTask.CosmosDB.Tracking
                     result.Add((HistoryEvent)converter.ConvertFromTableEntity(item, GetTypeForJsonObject));
                 }
             }
-
+            
             return result;
         }
 
@@ -177,8 +184,9 @@ namespace DurableTask.CosmosDB.Tracking
             }
             else if (document != null && string.IsNullOrEmpty(executionId))
             {
-                result = document.Executions.Values.FirstOrDefault();
+                result = document.Executions.Values.LastOrDefault();
             }
+
             Trace.WriteLine($"ReadState {result.OrchestrationStatus} | {result.Status}");
             return result;
         }
@@ -343,6 +351,7 @@ namespace DurableTask.CosmosDB.Tracking
                         state.Status = OrchestrationStatus.Running.ToString();
                         state.OrchestrationStatus = OrchestrationStatus.Running;
                         state.Input = executionStartedEvent.Input;
+                        state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                     case EventType.ExecutionCompleted:
                         orchestratorEventType = historyEvent.EventType;
@@ -350,7 +359,7 @@ namespace DurableTask.CosmosDB.Tracking
                         state.Status = executionCompleted.OrchestrationStatus.ToString();
                         state.OrchestrationStatus = executionCompleted.OrchestrationStatus;
                         state.Output = executionCompleted.Result;
-
+                        state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                     case EventType.ExecutionTerminated:
                         orchestratorEventType = historyEvent.EventType;
@@ -358,6 +367,7 @@ namespace DurableTask.CosmosDB.Tracking
                         state.Input = executionTerminatedEvent.Input;
                         state.Status = OrchestrationStatus.Terminated.ToString();
                         state.OrchestrationStatus = OrchestrationStatus.Terminated;
+                        state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                     case EventType.ContinueAsNew:
                         orchestratorEventType = historyEvent.EventType;
@@ -365,6 +375,7 @@ namespace DurableTask.CosmosDB.Tracking
                         state.Output = executionCompletedEvent.Result;
                         state.Status = OrchestrationStatus.ContinuedAsNew.ToString();
                         state.OrchestrationStatus = OrchestrationStatus.ContinuedAsNew;
+                        state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                 }
             }
@@ -372,6 +383,15 @@ namespace DurableTask.CosmosDB.Tracking
             document.SetPropertyValue("history", document.History);
             await SaveHistoryDocument(document);
 
+            if(state.OrchestrationInstance == null)
+            {
+                state.OrchestrationInstance = new OrchestrationInstance()
+                {
+                    ExecutionId = executionId,
+                    InstanceId = instanceId
+                };
+                
+            }
 
             if (!value.Executions.ContainsKey(executionId))
             {
@@ -383,7 +403,7 @@ namespace DurableTask.CosmosDB.Tracking
             }
 
             value.SetPropertyValue("executions", value.Executions);
-            await UpsertOrchestrationState(value);
+            await UpsertOrchestrationState(value);            
         }
     }
 }
