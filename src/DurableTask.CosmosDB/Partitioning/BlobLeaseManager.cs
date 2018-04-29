@@ -431,5 +431,38 @@ namespace DurableTask.AzureStorage.Partitioning
 
             return storageException;
         }
+
+        internal static BlobLeaseManager GetBlobLeaseManager(
+            string taskHub,
+            string workerName,
+            string storageConnectionString,
+            TimeSpan leaseInterval,
+            TimeSpan renewalInterval,
+            AzureStorageOrchestrationServiceStats stats)
+        {
+            var account = CloudStorageAccount.Parse(storageConnectionString);
+            return GetBlobLeaseManager(taskHub, workerName, account, leaseInterval, renewalInterval, stats);
+        }
+
+        internal static BlobLeaseManager GetBlobLeaseManager(
+            string taskHub,
+            string workerName,
+            CloudStorageAccount account,
+            TimeSpan leaseInterval,
+            TimeSpan renewalInterval,
+            AzureStorageOrchestrationServiceStats stats)
+        {
+            return new BlobLeaseManager(
+                taskHubName: taskHub,
+                workerName: workerName,
+                leaseContainerName: taskHub.ToLowerInvariant() + "-leases",
+                blobPrefix: string.Empty,
+                consumerGroupName: "default",
+                storageClient: account.CreateCloudBlobClient(),
+                leaseInterval: leaseInterval,
+                renewInterval: renewalInterval,
+                skipBlobContainerCreation: false,
+                stats: stats);
+        }
     }
 }
