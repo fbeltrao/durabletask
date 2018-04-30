@@ -109,7 +109,7 @@ namespace DurableTask.AzureStorage
 
             for (int i = 0; i < eventHubInfo.PartitionCount; i++)
             {
-                var id = $"{taskHubName}-control-{i.ToString("00")}".ToLowerInvariant();
+                var id = Utils.GetControlQueueId(taskHubName, i);
                 await CreatePartitionDocumentIfNotExist(id, eventHubInfo.TaskHubName);
             }
 
@@ -229,17 +229,12 @@ namespace DurableTask.AzureStorage
             }
         }
 
-        private string GetPartitionId(string partition)
-        {
-            return string.Concat(this.taskHubName, "-", partition);
-        }
-
         public async Task<Lease> GetLeaseAsync(string partitionId)
         {
             try
             {
                 var res = await this.documentClient.ReadDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, GetPartitionId(partitionId)));
+                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, partitionId));
 
                 var lease = (CosmosDBLease)(dynamic)res.Resource;
                 lease.Token = res.Resource.ETag;
