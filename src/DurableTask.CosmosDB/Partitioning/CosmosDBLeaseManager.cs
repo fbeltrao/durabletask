@@ -27,7 +27,7 @@ using Newtonsoft.Json;
 
 namespace DurableTask.AzureStorage
 {
-    internal partial class CosmosDBLeaseManager : ILeaseManager
+    internal partial class CosmosDBLeaseManager : ILeaseManager, IDisposable
     {
         private string taskHubName;
         private string workerId;
@@ -41,13 +41,13 @@ namespace DurableTask.AzureStorage
         private DocumentClient documentClient;
 
         public CosmosDBLeaseManager(
-            string taskHubName, 
-            string workerId, 
-            string cosmosDBEndpoint, 
-            string cosmosDBAuthKey, 
-            string cosmosDBLeaseManagementCollection, 
-            TimeSpan leaseInterval, 
-            TimeSpan leaseRenewInterval, 
+            string taskHubName,
+            string workerId,
+            string cosmosDBEndpoint,
+            string cosmosDBAuthKey,
+            string cosmosDBLeaseManagementCollection,
+            TimeSpan leaseInterval,
+            TimeSpan leaseRenewInterval,
             AzureStorageOrchestrationServiceStats stats)
         {
             this.taskHubName = taskHubName;
@@ -62,14 +62,14 @@ namespace DurableTask.AzureStorage
 
             this.Initialize();
         }
-        
+
 
         public async Task<bool> LeaseStoreExistsAsync()
         {
             try
             {
                 var collectionUri = UriFactory.CreateDocumentCollectionUri(
-                    this.cosmosDBName, 
+                    this.cosmosDBName,
                     this.cosmosDBLeaseManagementCollection);
 
                 var getCollectionResponse = await this.documentClient.ReadDocumentCollectionAsync(collectionUri);
@@ -111,7 +111,7 @@ namespace DurableTask.AzureStorage
             {
                 var id = $"{taskHubName}-control-{i.ToString("00")}".ToLowerInvariant();
                 await CreatePartitionDocumentIfNotExist(id, eventHubInfo.TaskHubName);
-            } 
+            }
 
             await this.CreateTaskHubInfoIfNotExistAsync(eventHubInfo);
 
@@ -176,7 +176,7 @@ namespace DurableTask.AzureStorage
             {
                 this.stats.CosmosDBRequests.Increment();
             }
-            
+
             return leases.OrderBy(x => x.PartitionId);
         }
 
@@ -251,13 +251,13 @@ namespace DurableTask.AzureStorage
                 if (ex.StatusCode != System.Net.HttpStatusCode.NotFound)
                     throw;
             }
-            
+
             return null;
         }
 
         public async Task<bool> RenewAsync(Lease lease)
         {
-            
+
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
@@ -443,7 +443,7 @@ namespace DurableTask.AzureStorage
                         }
                     });
 
-         
+
             }
             catch (DocumentClientException documentClientException)
             {
@@ -456,7 +456,7 @@ namespace DurableTask.AzureStorage
 
             return true;
         }
-        
+
         string GetTaskHubInfoDocumentId()
         {
             return string.Concat(this.taskHubName, "-", "taskhubinfo");
@@ -511,7 +511,7 @@ namespace DurableTask.AzureStorage
 
         void Initialize()
         {
-            this.documentClient = new DocumentClient(new Uri(this.cosmosDBEndpoint), this.cosmosDBAuthKey);      
+            this.documentClient = new DocumentClient(new Uri(this.cosmosDBEndpoint), this.cosmosDBAuthKey);
         }
 
         async Task<TaskHubInfo> GetTaskHubInfoAsync()
@@ -548,6 +548,14 @@ namespace DurableTask.AzureStorage
             }
 
             return exception;
+        }
+
+        public void Dispose()
+        {
+            if (this.documentClient != null)
+            {
+                this.documentClient.Dispose();
+            }
         }
     }
 }

@@ -32,7 +32,7 @@ namespace DurableTask.CosmosDB.Tracking
     using System.Runtime.Serialization;
     using System.Diagnostics;
 
-    class CosmosDbTrackingStore : TrackingStoreBase
+    class CosmosDbTrackingStore : TrackingStoreBase, IDisposable
     {
         private readonly DocumentClient documentClient;
         private string instancesCollectionName;
@@ -404,6 +404,14 @@ namespace DurableTask.CosmosDB.Tracking
 
             value.SetPropertyValue("executions", value.Executions);
             await UpsertOrchestrationState(value);            
+        }
+
+        public void Dispose()
+        {
+            if (this.documentClient != null)
+            {
+                this.documentClient.Dispose();
+            }
         }
     }
 }
