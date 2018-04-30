@@ -33,6 +33,11 @@ namespace DurableTask.AzureStorage
         static readonly ConcurrentDictionary<object, ReceivedMessageContext> ObjectAssociations;
         static readonly string UserAgent;
 
+        /// <summary>
+        /// Message identifier
+        /// </summary>
+        internal string MessageId { get; private set; }
+
         readonly string storageAccountName;
         readonly string taskHub;
         readonly Guid traceActivityId;
@@ -56,8 +61,9 @@ namespace DurableTask.AzureStorage
             ObjectAssociations = new ConcurrentDictionary<object, ReceivedMessageContext>();
         }
 
-        ReceivedMessageContext(string storageAccountName, string taskHub, Guid traceActivityId, MessageData message)
+        ReceivedMessageContext(string messageId, string storageAccountName, string taskHub, Guid traceActivityId, MessageData message)
         {
+            this.MessageId = messageId;
             this.storageAccountName = storageAccountName ?? throw new ArgumentNullException(nameof(storageAccountName));
             this.taskHub = taskHub ?? throw new ArgumentNullException(nameof(taskHub));
             this.traceActivityId = traceActivityId;
@@ -136,9 +142,9 @@ namespace DurableTask.AzureStorage
             MessageData data = await messageManager.DeserializeQueueMessageAsync(queueMessage, queueName);
 
             Guid newTraceActivityId = StartNewLogicalTraceScope();
-            TraceMessageReceived(storageAccountName, taskHub, data);
+            TraceMessageReceived(storageAccountName, taskHub, data);            
 
-            return new ReceivedMessageContext(storageAccountName, taskHub, newTraceActivityId, data);
+            return new ReceivedMessageContext(queueMessage.Id, storageAccountName, taskHub, newTraceActivityId, data);
         }
 
         static Guid StartNewLogicalTraceScope()

@@ -27,6 +27,7 @@ namespace DurableTask.AzureStorage
     using DurableTask.Core;
     using DurableTask.Core.History;
     using DurableTask.CosmosDB;
+    using DurableTask.CosmosDB.Queue;
     using DurableTask.CosmosDB.Tracking;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Blob;
@@ -46,17 +47,12 @@ namespace DurableTask.AzureStorage
 
         static readonly HistoryEvent[] EmptyHistoryEventList = new HistoryEvent[0];
 
-        readonly IExtensibleOrchestrationServiceSettings settings;
+        readonly internal IExtensibleOrchestrationServiceSettings settings;
         readonly AzureStorageOrchestrationServiceStats stats;
-        readonly string storageAccountName;
-        readonly CloudQueueClient queueClient;
-        readonly CloudBlobClient blobClient;
-        readonly ConcurrentDictionary<string, CloudQueue> ownedControlQueues;
-        readonly ConcurrentDictionary<string, CloudQueue> allControlQueues;
-        readonly CloudQueue workItemQueue;
+        readonly internal IQueueManager queueManager;
+
         readonly LinkedList<PendingMessageBatch> pendingOrchestrationMessageBatches;
         readonly ConcurrentDictionary<string, object> activeOrchestrationInstances;
-        readonly MessageManager messageManager;
 
         readonly ITrackingStore trackingStore;
 
@@ -99,36 +95,21 @@ namespace DurableTask.AzureStorage
             // TBD - decide if we will use Storage or Cosmos DB. For now initialize Storage specific settings. 
             this.settings = settings;
             this.tableEntityConverter = new TableEntityConverter();
-            CloudStorageAccount account = CloudStorageAccount.Parse(settings.StorageConnectionString);
-            this.storageAccountName = account.Credentials.AccountName;
             this.stats = new AzureStorageOrchestrationServiceStats();
-            this.queueClient = account.CreateCloudQueueClient();
-            this.queueClient.BufferManager = SimpleBufferManager.Shared;
-            this.blobClient = account.CreateCloudBlobClient();
-            this.blobClient.BufferManager = SimpleBufferManager.Shared;
 
-            // TODO: Need to do input validation on the TaskHubName.
-
-            this.ownedControlQueues = new ConcurrentDictionary<string, CloudQueue>();
-            this.allControlQueues = new ConcurrentDictionary<string, CloudQueue>();
-            this.workItemQueue = GetWorkItemQueue(account, settings.TaskHubName);
-
-            for (int i = 0; i < this.settings.PartitionCount; i++)
-            {
-                CloudQueue queue = GetControlQueue(this.queueClient, this.settings.TaskHubName, i);
-                this.allControlQueues.TryAdd(queue.Name, queue);
-            }
-
-            string compressedMessageBlobContainerName = $"{settings.TaskHubName.ToLowerInvariant()}-largemessages";
-            NameValidator.ValidateContainerName(compressedMessageBlobContainerName);
-            this.messageManager = new MessageManager(this.blobClient, compressedMessageBlobContainerName);
+            this.queueManager = new StorageQueueManager(settings, stats);
 
             if (customInstanceStore == null)
             {
-                //if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                //    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, this.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
-                //else
-                    this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint,settings.CosmosDBAuthKey,$"{settings.TaskHubName}instance", $"{settings.TaskHubName}history","durabletask");
+                if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                {
+                    var storageQueueManager = (StorageQueueManager)this.queueManager;
+                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, storageQueueManager.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
+                }
+                else
+                {
+                    this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint, settings.CosmosDBAuthKey, $"{settings.TaskHubName}instance", $"{settings.TaskHubName}history", "durabletask");
+                }
             }
             else
             {
@@ -150,16 +131,16 @@ namespace DurableTask.AzureStorage
 
             if (string.IsNullOrEmpty(settings.CosmosDBLeaseManagementCollection))
             {
-                this.leaseManager = GetBlobLeaseManager(
+                this.leaseManager = BlobLeaseManager.GetBlobLeaseManager(
                     settings.TaskHubName,
                     settings.WorkerId,
-                    account,
+                    settings.StorageConnectionString,
                     settings.LeaseInterval,
                     settings.LeaseRenewInterval,
                     this.stats);
 
                 this.partitionManager = new PartitionManager<BlobLease>(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     settings.WorkerId,
                     this.leaseManager,
@@ -198,77 +179,18 @@ namespace DurableTask.AzureStorage
 
         internal string WorkerId => this.settings.WorkerId;
 
-        internal IEnumerable<CloudQueue> AllControlQueues => this.allControlQueues.Values;
+        internal IEnumerable<IQueue> AllControlQueues => this.queueManager.AllControlQueues.Values;
 
-        internal IEnumerable<CloudQueue> OwnedControlQueues => this.ownedControlQueues.Values;
+        internal IEnumerable<IQueue> OwnedControlQueues => this.queueManager.OwnedControlQueues.Values;
 
-        internal CloudQueue WorkItemQueue => this.workItemQueue;
+        internal IQueue WorkItemQueue => this.queueManager.WorkItemQueue;
 
         internal ITrackingStore TrackingStore => this.trackingStore;
 
-        internal static CloudQueue GetControlQueue(CloudStorageAccount account, string taskHub, int partitionIndex)
-        {
-            if (account == null)
-            {
-                throw new ArgumentNullException(nameof(account));
-            }
+        
 
-            return GetControlQueue(account.CreateCloudQueueClient(), taskHub, partitionIndex);
-        }
 
-        internal static CloudQueue GetControlQueue(CloudQueueClient queueClient, string taskHub, int partitionIndex)
-        {
-            return GetQueueInternal(queueClient, taskHub, $"control-{partitionIndex:00}");
-        }
 
-        internal static CloudQueue GetWorkItemQueue(CloudStorageAccount account, string taskHub)
-        {
-            if (account == null)
-            {
-                throw new ArgumentNullException(nameof(account));
-            }
-
-            return GetQueueInternal(account.CreateCloudQueueClient(), taskHub, "workitems");
-        }
-
-        static CloudQueue GetQueueInternal(CloudQueueClient queueClient, string taskHub, string suffix)
-        {
-            if (queueClient == null)
-            {
-                throw new ArgumentNullException(nameof(queueClient));
-            }
-
-            if (string.IsNullOrEmpty(taskHub))
-            {
-                throw new ArgumentNullException(nameof(taskHub));
-            }
-
-            string queueName = $"{taskHub.ToLowerInvariant()}-{suffix}";
-            NameValidator.ValidateQueueName(queueName);
-
-            return queueClient.GetQueueReference(queueName);
-        }
-
-        static BlobLeaseManager GetBlobLeaseManager(
-            string taskHub,
-            string workerName,
-            CloudStorageAccount account,
-            TimeSpan leaseInterval,
-            TimeSpan renewalInterval,
-            AzureStorageOrchestrationServiceStats stats)
-        {
-            return new BlobLeaseManager(
-                taskHubName: taskHub,
-                workerName: workerName,
-                leaseContainerName: taskHub.ToLowerInvariant() + "-leases",
-                blobPrefix: string.Empty,
-                consumerGroupName: "default",
-                storageClient: account.CreateCloudBlobClient(),
-                leaseInterval: leaseInterval,
-                renewInterval: renewalInterval,
-                skipBlobContainerCreation: false,
-                stats: stats);
-        }
 
         static void ValidateSettings(IExtensibleOrchestrationServiceSettings settings)
         {
@@ -330,7 +252,7 @@ namespace DurableTask.AzureStorage
         // Internal logic used by the lazy taskHubCreator
         async Task GetTaskHubCreatorTask()
         {
-            TaskHubInfo hubInfo = GetTaskHubInfo(this.settings.TaskHubName, this.settings.PartitionCount);
+            var hubInfo = TaskHubInfo.GetTaskHubInfo(this.settings.TaskHubName, this.settings.PartitionCount);
             await this.leaseManager.CreateLeaseStoreIfNotExistsAsync(hubInfo);
             this.stats.StorageRequests.Increment();
 
@@ -338,9 +260,9 @@ namespace DurableTask.AzureStorage
 
             tasks.Add(this.trackingStore.CreateAsync());
 
-            tasks.Add(this.workItemQueue.CreateIfNotExistsAsync());
+            tasks.Add(this.WorkItemQueue.CreateIfNotExistsAsync());
 
-            foreach (CloudQueue controlQueue in this.allControlQueues.Values)
+            foreach (var controlQueue in this.AllControlQueues)
             {
                 tasks.Add(controlQueue.CreateIfNotExistsAsync());
                 tasks.Add(this.leaseManager.CreateLeaseIfNotExistAsync(controlQueue.Name));
@@ -380,16 +302,7 @@ namespace DurableTask.AzureStorage
         public async Task DeleteAsync(bool deleteInstanceStore)
         {
             var tasks = new List<Task>();
-
-            foreach (string partitionId in this.allControlQueues.Keys)
-            {
-                if (this.allControlQueues.TryGetValue(partitionId, out CloudQueue controlQueue))
-                {
-                    tasks.Add(controlQueue.DeleteIfExistsAsync());
-                }
-            }
-
-            tasks.Add(this.workItemQueue.DeleteIfExistsAsync());
+            tasks.Add(this.queueManager.DeleteAsync());
 
             if (deleteInstanceStore)
             {
@@ -435,8 +348,7 @@ namespace DurableTask.AzureStorage
             // Ad-hoc testing has shown very nice improvements (20%-50% drop in queue message age for simple scenarios).
 
             await this.trackingStore.StartAsync();
-
-            ServicePointManager.FindServicePoint(this.workItemQueue.Uri).UseNagleAlgorithm = false;
+            await this.queueManager.StartAsync();
 
             this.shutdownSource = new CancellationTokenSource();
             this.statsLoop = Task.Run(() => this.ReportStatsLoop(this.shutdownSource.Token));
@@ -480,7 +392,7 @@ namespace DurableTask.AzureStorage
                 catch (Exception e)
                 {
                     AnalyticsEventSource.Log.GeneralError(
-                        this.storageAccountName,
+                        this.queueManager.StorageName,
                         this.settings.TaskHubName,
                         $"Unexpected error in {nameof(ReportStatsLoop)}: {e}");
                 }
@@ -510,7 +422,7 @@ namespace DurableTask.AzureStorage
             }
 
             AnalyticsEventSource.Log.OrchestrationServiceStats(
-                this.storageAccountName,
+                this.queueManager.StorageName,
                 this.settings.TaskHubName,
                 storageRequests,
                 messagesSent,
@@ -526,19 +438,26 @@ namespace DurableTask.AzureStorage
 
         async Task IPartitionObserver.OnPartitionAcquiredAsync(Lease lease)
         {
-            CloudQueue controlQueue = this.queueClient.GetQueueReference(lease.PartitionId);
+            // TODO: remove refactored implementation
+            //CloudQueue controlQueue = this.queueClient.GetQueueReference(lease.PartitionId);
+            //await controlQueue.CreateIfNotExistsAsync();
+            //this.stats.StorageRequests.Increment();
+            //this.ownedControlQueues[lease.PartitionId] = controlQueue;
+            //this.allControlQueues[lease.PartitionId] = controlQueue;
+
+            var controlQueue = this.queueManager.GetQueue(lease.PartitionId);
             await controlQueue.CreateIfNotExistsAsync();
-            this.stats.StorageRequests.Increment();
-            this.ownedControlQueues[lease.PartitionId] = controlQueue;
-            this.allControlQueues[lease.PartitionId] = controlQueue;
+            this.queueManager.OwnedControlQueues[lease.PartitionId] = controlQueue;
+            this.queueManager.AllControlQueues[lease.PartitionId] = controlQueue;
+
         }
 
         Task IPartitionObserver.OnPartitionReleasedAsync(Lease lease, CloseReason reason)
         {
-            if (!this.ownedControlQueues.TryRemove(lease.PartitionId, out CloudQueue controlQueue))
+            if (!this.queueManager.OwnedControlQueues.TryRemove(lease.PartitionId, out var controlQueue))
             {
                 AnalyticsEventSource.Log.PartitionManagerWarning(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     this.settings.WorkerId,
                     $"Worker ${this.settings.WorkerId} lost a lease '{lease.PartitionId}' but didn't own the queue.");
@@ -553,35 +472,7 @@ namespace DurableTask.AzureStorage
             return this.leaseManager.ListLeasesAsync();
         }
 
-        internal static async Task<CloudQueue[]> GetControlQueuesAsync(
-            CloudStorageAccount account,
-            string taskHub,
-            int defaultPartitionCount)
-        {
-            if (account == null)
-            {
-                throw new ArgumentNullException(nameof(account));
-            }
-
-            if (taskHub == null)
-            {
-                throw new ArgumentNullException(nameof(taskHub));
-            }
-
-            BlobLeaseManager inactiveLeaseManager = GetBlobLeaseManager(taskHub, "n/a", account, TimeSpan.Zero, TimeSpan.Zero, null);
-            TaskHubInfo hubInfo = await inactiveLeaseManager.GetOrCreateTaskHubInfoAsync(
-                GetTaskHubInfo(taskHub, defaultPartitionCount));
-
-            CloudQueueClient queueClient = account.CreateCloudQueueClient();
-
-            var controlQueues = new CloudQueue[hubInfo.PartitionCount];
-            for (int i = 0; i < hubInfo.PartitionCount; i++)
-            {
-                controlQueues[i] = GetControlQueue(queueClient, taskHub, i);
-            }
-
-            return controlQueues;
-        }
+        
 
         static TaskHubInfo GetTaskHubInfo(string taskHub, int partitionCount)
         {
@@ -602,30 +493,13 @@ namespace DurableTask.AzureStorage
             PendingMessageBatch nextBatch;
             while (true)
             {
-                var messages = new List<MessageData>();
+                List<MessageData> messages = null;
 
                 // Stop dequeuing messages if the buffer gets too full.
                 if (this.stats.PendingOrchestratorMessages.Value < this.settings.ControlQueueBufferThreshold)
                 {
-                    await this.ownedControlQueues.Values.ParallelForEachAsync(
-                        async delegate (CloudQueue controlQueue)
-                        {
-                            IEnumerable<CloudQueueMessage> batch = await controlQueue.GetMessagesAsync(
-                                this.settings.ControlQueueBatchSize,
-                                this.settings.ControlQueueVisibilityTimeout,
-                                ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
-                                null /* operationContext */,
-                                cancellationToken);
-                            this.stats.StorageRequests.Increment();
-
-                            IEnumerable<MessageData> deserializedBatch = await Task.WhenAll(
-                                batch.Select(async m => await this.messageManager.DeserializeQueueMessageAsync(m, controlQueue.Name)));
-                            lock (messages)
-                            {
-                                messages.AddRange(deserializedBatch);
-                            }
-                        });
-
+                    messages = await this.queueManager.GetMessagesAsync(cancellationToken);
+                    
                     this.stats.MessagesRead.Increment(messages.Count);
                     this.stats.PendingOrchestratorMessages.Increment(messages.Count);
                 }
@@ -648,7 +522,7 @@ namespace DurableTask.AzureStorage
 
             ReceivedMessageContext messageContext =
                 ReceivedMessageContext.CreateFromReceivedMessageBatch(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     nextBatch.Messages);
 
@@ -683,7 +557,7 @@ namespace DurableTask.AzureStorage
                 runtimeState.OrchestrationStatus != OrchestrationStatus.Pending)
             {
                 // The instance has already completed. Delete this message batch.
-                CloudQueue controlQueue = await this.GetControlQueueAsync(instance.InstanceId);
+                var controlQueue = await this.GetControlQueueAsync(instance.InstanceId);
                 await this.DeleteMessageBatchAsync(messageContext, controlQueue);
                 await this.ReleaseTaskOrchestrationWorkItemAsync(orchestrationWorkItem);
                 return null;
@@ -740,7 +614,7 @@ namespace DurableTask.AzureStorage
                         if (existingMessage.Id == data.OriginalQueueMessage.Id)
                         {
                             AnalyticsEventSource.Log.DuplicateMessageDetected(
-                                this.storageAccountName,
+                                this.queueManager.StorageName,
                                 this.settings.TaskHubName,
                                 existingMessage.Id,
                                 existingMessage.DequeueCount);
@@ -799,7 +673,7 @@ namespace DurableTask.AzureStorage
             {
                 // The context doesn't exist - possibly because this is a duplicate message.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     $"Could not find context for orchestration work item with InstanceId = {workItem.InstanceId}.");
                 return;
@@ -815,7 +689,7 @@ namespace DurableTask.AzureStorage
             bool addedControlMessages = false;
             bool addedWorkItemMessages = false;
 
-            CloudQueue currentControlQueue = await this.GetControlQueueAsync(instanceId);
+            var currentControlQueue = await this.GetControlQueueAsync(instanceId);
             int totalMessageCount = 0;
 
             // Second persistence step is to commit outgoing messages to their respective queues. If there is
@@ -829,9 +703,9 @@ namespace DurableTask.AzureStorage
                 foreach (TaskMessage taskMessage in orchestratorMessages)
                 {
                     string targetInstanceId = taskMessage.OrchestrationInstance.InstanceId;
-                    CloudQueue targetControlQueue = await this.GetControlQueueAsync(targetInstanceId);
+                    var targetControlQueue = await this.GetControlQueueAsync(targetInstanceId);
 
-                    enqueueTasks.Add(this.EnqueueMessageAsync(context, targetControlQueue, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
+                    enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(targetControlQueue, context, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
                 }
             }
 
@@ -850,7 +724,7 @@ namespace DurableTask.AzureStorage
                         initialVisibilityDelay = TimeSpan.Zero;
                     }
 
-                    enqueueTasks.Add(this.EnqueueMessageAsync(context, currentControlQueue, taskMessage, initialVisibilityDelay, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
+                    enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(currentControlQueue, context, taskMessage, initialVisibilityDelay, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));                    
                 }
             }
 
@@ -860,7 +734,7 @@ namespace DurableTask.AzureStorage
                 addedWorkItemMessages = true;
                 foreach (TaskMessage taskMessage in outboundMessages)
                 {
-                    enqueueTasks.Add(this.EnqueueMessageAsync(context, this.workItemQueue, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions));
+                    enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(this.queueManager.WorkItemQueue, context, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions));
                 }
             }
 
@@ -869,7 +743,7 @@ namespace DurableTask.AzureStorage
                 totalMessageCount++;
                 addedControlMessages = true;
 
-                enqueueTasks.Add(this.EnqueueMessageAsync(context, currentControlQueue, continuedAsNewMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
+                enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(currentControlQueue, context, continuedAsNewMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
             }
 
             await Task.WhenAll(enqueueTasks);
@@ -891,27 +765,16 @@ namespace DurableTask.AzureStorage
             await this.DeleteMessageBatchAsync(context, currentControlQueue);
         }
 
-        async Task EnqueueMessageAsync(ReceivedMessageContext context, CloudQueue queue, TaskMessage taskMessage, TimeSpan? initialVisibilityDelay, QueueRequestOptions queueRequestOptions)
-        {
-            CloudQueueMessage message = await context.CreateOutboundQueueMessageAsync(this.messageManager, taskMessage, queue.Name);
-
-            await queue.AddMessageAsync(
-                message,
-                null /* timeToLive */,
-                initialVisibilityDelay,
-                queueRequestOptions,
-                context.StorageOperationContext);
-        }
-
-        async Task DeleteMessageBatchAsync(ReceivedMessageContext context, CloudQueue controlQueue)
-        {
+       
+        async Task DeleteMessageBatchAsync(ReceivedMessageContext context, IQueue controlQueue)
+        {            
             Task[] deletes = new Task[context.MessageDataBatch.Count];
             for (int i = 0; i < context.MessageDataBatch.Count; i++)
             {
                 CloudQueueMessage queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
                 TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
                 AnalyticsEventSource.Log.DeletingMessage(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     taskMessage.Event.EventType.ToString(),
                     queueMessage.Id,
@@ -955,7 +818,7 @@ namespace DurableTask.AzureStorage
             }
 
             string instanceId = workItem.InstanceId;
-            CloudQueue controlQueue = await this.GetControlQueueAsync(instanceId);
+            var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
 
             // Reset the visibility of the message to ensure it doesn't get picked up by anyone else.
             try
@@ -992,7 +855,7 @@ namespace DurableTask.AzureStorage
             }
 
             string instanceId = workItem.InstanceId;
-            CloudQueue controlQueue = await this.GetControlQueueAsync(instanceId);
+            var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
 
             Task[] updates = new Task[context.MessageDataBatch.Count];
 
@@ -1004,7 +867,7 @@ namespace DurableTask.AzureStorage
                 TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
 
                 AnalyticsEventSource.Log.AbandoningMessage(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     taskMessage.Event.EventType.ToString(),
                     queueMessage.Id,
@@ -1054,17 +917,18 @@ namespace DurableTask.AzureStorage
             await this.EnsuredCreatedIfNotExistsAsync();
 
             Stopwatch receiveTimeoutStopwatch = Stopwatch.StartNew();
-            CloudQueueMessage queueMessage;
+            ReceivedMessageContext context;
             while (true)
             {
-                queueMessage = await this.workItemQueue.GetMessageAsync(
+                context = await this.queueManager.GetMessageAsync(
+                    this.WorkItemQueue,
                     this.settings.WorkItemQueueVisibilityTimeout,
                     ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                     null /* operationContext */,
                     cancellationToken);
                 this.stats.StorageRequests.Increment();
 
-                if (queueMessage != null)
+                if (context != null)
                 {
                     break;
                 }
@@ -1080,20 +944,15 @@ namespace DurableTask.AzureStorage
             this.stats.MessagesRead.Increment();
             this.workItemQueueBackoff.Reset();
 
-            ReceivedMessageContext context = await ReceivedMessageContext.CreateFromReceivedMessageAsync(
-                this.messageManager,
-                this.storageAccountName,
-                this.settings.TaskHubName,
-                queueMessage,
-                this.workItemQueue.Name);
-            if (!context.TrySave(queueMessage.Id))
+            
+            if (!context.TrySave(context.MessageId))
             {
                 // This means we're already processing this message. This is never expected since the message
                 // should be kept invisible via background calls to RenewTaskActivityWorkItemLockAsync.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
-                    $"Work item queue message with ID = {queueMessage.Id} is being processed multiple times concurrently.");
+                    $"Work item queue message with ID = {context.MessageId} is being processed multiple times concurrently.");
                 return null;
             }
 
@@ -1101,7 +960,7 @@ namespace DurableTask.AzureStorage
 
             return new TaskActivityWorkItem
             {
-                Id = queueMessage.Id,
+                Id = context.MessageId,
                 TaskMessage = context.MessageData.TaskMessage,
                 LockedUntilUtc = context.GetNextMessageExpirationTimeUtc(),
             };
@@ -1115,25 +974,28 @@ namespace DurableTask.AzureStorage
             {
                 // The context does not exist - possibly because it was already removed.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     $"Could not find context for work item with ID = {workItem.Id}.");
                 return;
             }
 
             string instanceId = workItem.TaskMessage.OrchestrationInstance.InstanceId;
-            CloudQueue controlQueue = await this.GetControlQueueAsync(instanceId);
+            var controlQueue = await this.GetControlQueueAsync(instanceId);
 
             // First, send a response message back. If this fails, we'll try again later since we haven't deleted the
             // work item message yet (that happens next).
             try
             {
-                await controlQueue.AddMessageAsync(
-                    await context.CreateOutboundQueueMessageAsync(this.messageManager, responseTaskMessage, controlQueue.Name),
+                await queueManager.AddMessageAsync(
+                    controlQueue,
+                    responseTaskMessage,
                     null /* timeToLive */,
                     null /* initialVisibilityDelay */,
                     ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
-                    context.StorageOperationContext);
+                    context.StorageOperationContext
+                );
+
                 this.stats.MessagesSent.Increment();
             }
             finally
@@ -1149,14 +1011,14 @@ namespace DurableTask.AzureStorage
 
             // Next, delete the work item queue message. This must come after enqueuing the response message.
             AnalyticsEventSource.Log.DeletingMessage(
-                this.storageAccountName,
+                this.queueManager.StorageName,
                 this.settings.TaskHubName,
                 workItem.TaskMessage.Event.EventType.ToString(),
                 messageId,
                 instanceId,
                 context.Instance.ExecutionId);
 
-            Task deleteTask = this.workItemQueue.DeleteMessageAsync(
+            Task deleteTask = this.WorkItemQueue.DeleteMessageAsync(
                 context.MessageData.OriginalQueueMessage,
                 ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
@@ -1192,7 +1054,7 @@ namespace DurableTask.AzureStorage
             string instanceId = workItem.TaskMessage.OrchestrationInstance.InstanceId;
 
             // Reset the visibility of the message to ensure it doesn't get picked up by anyone else.
-            Task renewTask = this.workItemQueue.UpdateMessageAsync(
+            Task renewTask = this.WorkItemQueue.UpdateMessageAsync(
                 context.MessageData.OriginalQueueMessage,
                 this.settings.WorkItemQueueVisibilityTimeout,
                 MessageUpdateFields.Visibility,
@@ -1228,7 +1090,7 @@ namespace DurableTask.AzureStorage
             {
                 // The context does not exist - possibly because it was already removed.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.storageAccountName,
+                    this.queueManager.StorageName,
                     this.settings.TaskHubName,
                     $"Could not find context for work item with ID = {workItem.Id}.");
                 return;
@@ -1238,7 +1100,7 @@ namespace DurableTask.AzureStorage
             string instanceId = workItem.TaskMessage.OrchestrationInstance.InstanceId;
 
             AnalyticsEventSource.Log.AbandoningMessage(
-                this.storageAccountName,
+                this.queueManager.StorageName,
                 this.settings.TaskHubName,
                 workItem.TaskMessage.Event.EventType.ToString(),
                 messageId,
@@ -1246,7 +1108,7 @@ namespace DurableTask.AzureStorage
                 workItem.TaskMessage.OrchestrationInstance.ExecutionId);
 
             // We "abandon" the message by settings its visibility timeout to zero.
-            Task abandonTask = this.workItemQueue.UpdateMessageAsync(
+            Task abandonTask = this.WorkItemQueue.UpdateMessageAsync(
                 context.MessageData.OriginalQueueMessage,
                 TimeSpan.Zero,
                 MessageUpdateFields.Visibility,
@@ -1277,7 +1139,7 @@ namespace DurableTask.AzureStorage
                 {
                     // Message may have been processed and deleted already.
                     AnalyticsEventSource.Log.MessageGone(
-                        this.storageAccountName,
+                        this.queueManager.StorageName,
                         this.settings.TaskHubName,
                         messageId,
                         instanceId,
@@ -1347,7 +1209,7 @@ namespace DurableTask.AzureStorage
             // Client operations will auto-create the task hub if it doesn't already exist.
             await this.EnsuredCreatedIfNotExistsAsync();
 
-            CloudQueue controlQueue = await this.GetControlQueueAsync(message.OrchestrationInstance.InstanceId);
+            var controlQueue = await this.GetControlQueueAsync(message.OrchestrationInstance.InstanceId);
 
             await this.SendTaskOrchestrationMessageInternalAsync(controlQueue, message);
 
@@ -1361,20 +1223,17 @@ namespace DurableTask.AzureStorage
 
         }
 
-        async Task SendTaskOrchestrationMessageInternalAsync(CloudQueue controlQueue, TaskMessage message)
+        async Task SendTaskOrchestrationMessageInternalAsync(IQueue controlQueue, TaskMessage message)
         {
-            await controlQueue.AddMessageAsync(
-                await ReceivedMessageContext.CreateOutboundQueueMessageInternalAsync(
-                    this.messageManager,
-                    this.storageAccountName,
-                    this.settings.TaskHubName,
-                    controlQueue.Name,
-                    message),
+            await this.queueManager.AddMessageAsync(
+                controlQueue, 
+                message,                 
                 null /* timeToLive */,
                 null /* initialVisibilityDelay */,
                 ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
-                null /* operationContext */);
-            this.stats.StorageRequests.Increment();
+                null /* operationContext */
+                );
+
             this.stats.MessagesSent.Increment();
 
             // Notify the control queue poller that there are new messages to process.
@@ -1496,14 +1355,15 @@ namespace DurableTask.AzureStorage
 
         // TODO: Change this to a sticky assignment so that partition count changes can
         //       be supported: https://github.com/Azure/azure-functions-durable-extension/issues/1
-        async Task<CloudQueue> GetControlQueueAsync(string instanceId)
+        async Task<IQueue> GetControlQueueAsync(string instanceId)
         {
             uint partitionIndex = Fnv1aHashHelper.ComputeHash(instanceId) % (uint)this.settings.PartitionCount;
-            CloudQueue controlQueue = GetControlQueue(this.queueClient, this.settings.TaskHubName, (int)partitionIndex);
+            var controlQueue = this.queueManager.GetControlQueue((int)partitionIndex);
+            //CloudQueue controlQueue = GetControlQueue(this.queueClient, this.settings.TaskHubName, (int)partitionIndex);
 
-            CloudQueue cachedQueue;
-            if (this.ownedControlQueues.TryGetValue(controlQueue.Name, out cachedQueue) ||
-                this.allControlQueues.TryGetValue(controlQueue.Name, out cachedQueue))
+            IQueue cachedQueue;
+            if (this.queueManager.OwnedControlQueues.TryGetValue(controlQueue.Name, out cachedQueue) ||
+                this.queueManager.AllControlQueues.TryGetValue(controlQueue.Name, out cachedQueue))
             {
                 return cachedQueue;
             }
@@ -1518,7 +1378,7 @@ namespace DurableTask.AzureStorage
                     this.stats.StorageRequests.Increment();
                 }
 
-                this.allControlQueues.TryAdd(controlQueue.Name, controlQueue);
+                this.queueManager.AllControlQueues.TryAdd(controlQueue.Name, controlQueue);
                 return controlQueue;
             }
         }

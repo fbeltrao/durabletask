@@ -110,17 +110,17 @@ namespace DurableTask.CosmosDB.Tests
 
             // Control queues
             Assert.IsNotNull(service.AllControlQueues, "Control queue collection was not initialized.");
-            CloudQueue[] controlQueues = service.AllControlQueues.ToArray();
+            var controlQueues = service.AllControlQueues.ToArray();
             Assert.AreEqual(4, controlQueues.Length, "Expected to see the default four control queues created.");
-            foreach (CloudQueue queue in controlQueues)
+            foreach (var queue in controlQueues)
             {
-                Assert.IsTrue(queue.Exists(), $"Queue {queue.Name} was not created.");
+                Assert.IsTrue(await queue.ExistsAsync(), $"Queue {queue.Name} was not created.");
             }
 
             // Work-item queue
-            CloudQueue workItemQueue = service.WorkItemQueue;
+            var workItemQueue = service.WorkItemQueue;
             Assert.IsNotNull(workItemQueue, "Work-item queue client was not initialized.");
-            Assert.IsTrue(workItemQueue.Exists(), $"Queue {workItemQueue.Name} was not created.");
+            Assert.IsTrue(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not created.");
 
             // TrackingStore
             ITrackingStore trackingStore = service.TrackingStore;
@@ -158,12 +158,12 @@ namespace DurableTask.CosmosDB.Tests
             {
                 await service.DeleteAsync();
 
-                foreach (CloudQueue queue in controlQueues)
+                foreach (var queue in controlQueues)
                 {
-                    Assert.IsFalse(queue.Exists(), $"Queue {queue.Name} was not deleted.");
+                    Assert.IsFalse(await queue.ExistsAsync(), $"Queue {queue.Name} was not deleted.");
                 }
 
-                Assert.IsFalse(workItemQueue.Exists(), $"Queue {workItemQueue.Name} was not deleted.");
+                Assert.IsFalse(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not deleted.");
 
                 try
                 {
@@ -213,17 +213,17 @@ namespace DurableTask.CosmosDB.Tests
 
             // Control queues
             Assert.IsNotNull(service.AllControlQueues, "Control queue collection was not initialized.");
-            CloudQueue[] controlQueues = service.AllControlQueues.ToArray();
+            var controlQueues = service.AllControlQueues.ToArray();
             Assert.AreEqual(4, controlQueues.Length, "Expected to see the default four control queues created.");
-            foreach (CloudQueue queue in controlQueues)
+            foreach (var queue in controlQueues)
             {
-                Assert.IsTrue(queue.Exists(), $"Queue {queue.Name} was not created.");
+                Assert.IsTrue(await queue.ExistsAsync(), $"Queue {queue.Name} was not created.");
             }
 
             // Work-item queue
-            CloudQueue workItemQueue = service.WorkItemQueue;
+            var workItemQueue = service.WorkItemQueue;
             Assert.IsNotNull(workItemQueue, "Work-item queue client was not initialized.");
-            Assert.IsTrue(workItemQueue.Exists(), $"Queue {workItemQueue.Name} was not created.");
+            Assert.IsTrue(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not created.");
 
             // TrackingStore
             ITrackingStore trackingStore = service.TrackingStore;
@@ -263,12 +263,12 @@ namespace DurableTask.CosmosDB.Tests
             {
                 await service.DeleteAsync();
 
-                foreach (CloudQueue queue in controlQueues)
+                foreach (var queue in controlQueues)
                 {
-                    Assert.IsFalse(queue.Exists(), $"Queue {queue.Name} was not deleted.");
+                    Assert.IsFalse(await queue.ExistsAsync(), $"Queue {queue.Name} was not deleted.");
                 }
 
-                Assert.IsFalse(workItemQueue.Exists(), $"Queue {workItemQueue.Name} was not deleted.");
+                Assert.IsFalse(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not deleted.");
 
                 try
                 {
@@ -384,7 +384,7 @@ namespace DurableTask.CosmosDB.Tests
                                     continue;
                                 }
 
-                                foreach (CloudQueue controlQueue in service.OwnedControlQueues)
+                                foreach (var controlQueue in service.OwnedControlQueues)
                                 {
                                     Assert.IsTrue(allQueueNames.Add(controlQueue.Name), $"Mismatch between owned control queues and all queues {controlQueue.Name}, all: {string.Join(",", allQueueNames)}");
                                 }
@@ -402,8 +402,11 @@ namespace DurableTask.CosmosDB.Tests
                                 Assert.IsTrue(
                                     service.OwnedControlQueues.All(q => ownedLeases.Any(l => l.Name.Contains(q.Name))),
                                     "Mismatch between queue assignment and lease ownership.");
+
+                                IEnumerable<Task<bool>> allExistsTasks = service.OwnedControlQueues.Select(q => q.ExistsAsync());
+                                var allExistsResult = await Task.WhenAll(allExistsTasks);
                                 Assert.IsTrue(
-                                    service.OwnedControlQueues.All(q => q.Exists()),
+                                    allExistsResult.All(x => x),
                                     $"One or more control queues owned by {service.WorkerId} do not exist");
                             }
 
@@ -453,13 +456,12 @@ namespace DurableTask.CosmosDB.Tests
 
             OrchestrationInstance[] instances = await Task.WhenAll(createTasks);
 
-            CloudQueue[] controlQueues = service.AllControlQueues.ToArray();
+            var controlQueues = service.AllControlQueues.ToArray();
             Assert.AreEqual(settings.PartitionCount, controlQueues.Length, "Unexpected number of control queues");
 
-            foreach (CloudQueue cloudQueue in controlQueues)
+            foreach (var cloudQueue in controlQueues)
             {
-                await cloudQueue.FetchAttributesAsync();
-                int messageCount = cloudQueue.ApproximateMessageCount.GetValueOrDefault(-1);
+                int messageCount = await cloudQueue.GetQueueLenghtAsync();
 
                 Trace.TraceInformation($"Queue {cloudQueue.Name} has {messageCount} message(s).");
                 Assert.IsTrue(messageCount > 0, $"Queue {cloudQueue.Name} didn't receive any messages");
@@ -510,7 +512,7 @@ namespace DurableTask.CosmosDB.Tests
             };
 
             var service = new ExtensibleOrchestrationService(settings);
-            var monitor = new StorageDisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
+            var monitor = new StorageDisconnectedPerformanceMonitor(service, settings.TaskHubName);
 
             await service.DeleteAsync();
 
@@ -563,7 +565,7 @@ namespace DurableTask.CosmosDB.Tests
 
             var service = new ExtensibleOrchestrationService(settings);
 
-            var monitor = new StorageDisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
+            var monitor = new StorageDisconnectedPerformanceMonitor(service, settings.TaskHubName);
             int simulatedWorkerCount = 0;
             await service.CreateAsync();
 
@@ -1094,7 +1096,7 @@ namespace DurableTask.CosmosDB.Tests
 
         static FakePerformanceMonitor GetFakePerformanceMonitor()
         {
-            return new FakePerformanceMonitor(TestHelpers.GetTestStorageAccountConnectionString(), "taskHub");
+            return new FakePerformanceMonitor("taskHub");
         }
 
         class NoOpOrchestration : TaskOrchestration<string, string>
@@ -1108,10 +1110,9 @@ namespace DurableTask.CosmosDB.Tests
         class FakePerformanceMonitor : StorageDisconnectedPerformanceMonitor
         {
             public FakePerformanceMonitor(
-                string storageConnectionString,
                 string taskHub,
                 int partitionCount = Utils.DefaultPartitionCount) 
-                : base(storageConnectionString, taskHub)
+                : base(null, taskHub)
             {
                 this.PartitionCount = partitionCount;
                 for (int i = 0; i < partitionCount; i++)
