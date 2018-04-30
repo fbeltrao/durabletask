@@ -15,24 +15,6 @@ using System.Threading.Tasks;
 
 namespace DurableTask.CosmosDB.Queue
 {
-    /// <summary>
-    /// Queue
-    /// </summary>
-    interface IQueue
-    {
-        string Name { get; }
-
-        Task CreateIfNotExistsAsync();
-
-        Task<bool> DeleteIfExistsAsync();
-
-        Task<IEnumerable<CloudQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken);
-        Task DeleteMessageAsync(CloudQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext);
-        Task UpdateMessageAsync(CloudQueueMessage originalQueueMessage, TimeSpan controlQueueVisibilityTimeout, MessageUpdateFields visibility, QueueRequestOptions requestOptions, OperationContext operationContext);
-        Task<CloudQueueMessage> PeekMessageAsync();
-        Task<int> GetQueueLenghtAsync();
-        Task<bool> ExistsAsync();
-    }
 
     /// <summary>
     /// Queue manager
@@ -70,30 +52,23 @@ namespace DurableTask.CosmosDB.Queue
         /// Starts
         /// </summary>
         /// <returns></returns>
-        Task StartAsync();
-
-        /// <summary>
-        /// Gets the queue by partition
-        /// </summary>
-        /// <param name="partitionId"></param>
-        /// <returns></returns>
-        IQueue GetQueue(string partitionId);
+        Task StartAsync();        
 
         Task<List<MessageData>> GetMessagesAsync(CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the control queue for the partition index
         /// </summary>
-        /// <param name="partitionIndex"></param>
+        /// <param name="id"></param>
         /// <returns></returns>
-        IQueue GetControlQueue(int partitionIndex);
+        IQueue GetControlQueue(string id);
 
-        /// <summary>
-        /// Gets the control queue for the partition
-        /// </summary>
-        /// <param name="partitionId"></param>
-        /// <returns></returns>
-        Task<IQueue> GetControlQueueAsync(string partitionId);
+        ///// <summary>
+        ///// Gets the control queue for the partition
+        ///// </summary>
+        ///// <param name="id"></param>
+        ///// <returns></returns>
+        //Task<IQueue> GetControlQueueAsync(string id);
 
         /// <summary>
         /// Enqueues message

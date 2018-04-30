@@ -445,7 +445,7 @@ namespace DurableTask.AzureStorage
             //this.ownedControlQueues[lease.PartitionId] = controlQueue;
             //this.allControlQueues[lease.PartitionId] = controlQueue;
 
-            var controlQueue = this.queueManager.GetQueue(lease.PartitionId);
+            var controlQueue = this.queueManager.GetControlQueue(lease.PartitionId);
             await controlQueue.CreateIfNotExistsAsync();
             this.queueManager.OwnedControlQueues[lease.PartitionId] = controlQueue;
             this.queueManager.AllControlQueues[lease.PartitionId] = controlQueue;
@@ -548,7 +548,7 @@ namespace DurableTask.AzureStorage
 
             foreach (var message in nextBatch.Messages)
             {
-                Trace.WriteLine($"MessageBatch: {message.OriginalQueueMessage.AsString}");
+                Trace.WriteLine($"MessageBatch: {message.OriginalQueueMessage.AsString()}");
             }
 
 
@@ -610,7 +610,7 @@ namespace DurableTask.AzureStorage
                     int i;
                     for (i = 0; i < targetBatch.Messages.Count; i++)
                     {
-                        CloudQueueMessage existingMessage = targetBatch.Messages[i].OriginalQueueMessage;
+                        var existingMessage = targetBatch.Messages[i].OriginalQueueMessage;
                         if (existingMessage.Id == data.OriginalQueueMessage.Id)
                         {
                             AnalyticsEventSource.Log.DuplicateMessageDetected(
@@ -771,7 +771,7 @@ namespace DurableTask.AzureStorage
             Task[] deletes = new Task[context.MessageDataBatch.Count];
             for (int i = 0; i < context.MessageDataBatch.Count; i++)
             {
-                CloudQueueMessage queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
+                var queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
                 TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
                 AnalyticsEventSource.Log.DeletingMessage(
                     this.queueManager.StorageName,
@@ -818,7 +818,8 @@ namespace DurableTask.AzureStorage
             }
 
             string instanceId = workItem.InstanceId;
-            var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
+            //var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
+            var controlQueue = this.queueManager.GetControlQueue(instanceId);
 
             // Reset the visibility of the message to ensure it doesn't get picked up by anyone else.
             try
@@ -855,7 +856,8 @@ namespace DurableTask.AzureStorage
             }
 
             string instanceId = workItem.InstanceId;
-            var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
+            //var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
+            var controlQueue = this.queueManager.GetControlQueue(instanceId);
 
             Task[] updates = new Task[context.MessageDataBatch.Count];
 
@@ -863,7 +865,7 @@ namespace DurableTask.AzureStorage
             // This allows it to be reprocessed on this node or another node.
             for (int i = 0; i < context.MessageDataBatch.Count; i++)
             {
-                CloudQueueMessage queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
+                var queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
                 TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
 
                 AnalyticsEventSource.Log.AbandoningMessage(
@@ -1358,8 +1360,7 @@ namespace DurableTask.AzureStorage
         async Task<IQueue> GetControlQueueAsync(string instanceId)
         {
             uint partitionIndex = Fnv1aHashHelper.ComputeHash(instanceId) % (uint)this.settings.PartitionCount;
-            var controlQueue = this.queueManager.GetControlQueue((int)partitionIndex);
-            //CloudQueue controlQueue = GetControlQueue(this.queueClient, this.settings.TaskHubName, (int)partitionIndex);
+            var controlQueue = this.queueManager.GetControlQueue(Utils.GetControlQueueId(settings.TaskHubName, (int)partitionIndex));
 
             IQueue cachedQueue;
             if (this.queueManager.OwnedControlQueues.TryGetValue(controlQueue.Name, out cachedQueue) ||

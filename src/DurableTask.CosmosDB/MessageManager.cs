@@ -5,6 +5,7 @@
     using System.IO.Compression;
     using System.Text;
     using System.Threading.Tasks;
+    using DurableTask.CosmosDB.Queue;
     using Microsoft.WindowsAzure.Storage.Blob;
     using Microsoft.WindowsAzure.Storage.Queue;
     using Newtonsoft.Json;
@@ -78,7 +79,7 @@
                 envelope.MessageFormat = MessageFormatFlags.StorageBlob;
             }
 
-            envelope.OriginalQueueMessage = queueMessage;
+            envelope.OriginalQueueMessage = new CloudQueueMessageWrapper(queueMessage);
             envelope.TotalMessageSizeBytes = Encoding.Unicode.GetByteCount(queueMessage.AsString);
             envelope.QueueName = queueName;
             return envelope;

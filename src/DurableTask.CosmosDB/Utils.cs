@@ -73,6 +73,11 @@ namespace DurableTask.AzureStorage
         {
             return Convert.ToInt64((date - epoch).TotalSeconds);
         }
+
+        internal static string GetControlQueueId(string taskHubName, int partitionIndex)
+        {
+            return $"{taskHubName.ToLowerInvariant()}hub-control-{partitionIndex:00}";
+        }
     }
 
 

@@ -174,9 +174,9 @@ namespace DurableTask.AzureStorage.Partitioning
             }
         }
 
-        public async Task<Lease> GetLeaseAsync(string paritionId)
+        public async Task<Lease> GetLeaseAsync(string partitionId)
         {
-            CloudBlockBlob leaseBlob = this.consumerGroupDirectory.GetBlockBlobReference(paritionId);
+            CloudBlockBlob leaseBlob = this.consumerGroupDirectory.GetBlockBlobReference(partitionId);
             if (await leaseBlob.ExistsAsync())
             {
                 return await this.DownloadLeaseBlob(leaseBlob);

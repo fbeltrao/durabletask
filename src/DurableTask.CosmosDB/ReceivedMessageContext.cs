@@ -160,7 +160,7 @@ namespace DurableTask.AzureStorage
         static void TraceMessageReceived(string storageAccountName, string taskHub, MessageData data)
         {
             TaskMessage taskMessage = data.TaskMessage;
-            CloudQueueMessage queueMessage = data.OriginalQueueMessage;
+            var queueMessage = data.OriginalQueueMessage;
 
             AnalyticsEventSource.Log.ReceivedMessage(
                 data.ActivityId,
@@ -188,36 +188,7 @@ namespace DurableTask.AzureStorage
             }
         }
 
-        public Task<CloudQueueMessage> CreateOutboundQueueMessageAsync(MessageManager messageManager, TaskMessage taskMessage, string queueName)
-        {
-            return CreateOutboundQueueMessageInternalAsync(messageManager, this.storageAccountName, this.taskHub, queueName, taskMessage);
-        }
-
-        internal static async Task<CloudQueueMessage> CreateOutboundQueueMessageInternalAsync(
-            MessageManager messageManager,
-            string storageAccountName,
-            string taskHub,
-            string queueName,
-            TaskMessage taskMessage)
-        {
-            // We transfer to a new trace activity ID every time a new outbound queue message is created.
-            Guid outboundTraceActivityId = Guid.NewGuid();
-
-            var data = new MessageData(taskMessage, outboundTraceActivityId, queueName);
-            string rawContent = await messageManager.SerializeMessageDataAsync(data);
-
-            AnalyticsEventSource.Log.SendingMessage(
-                outboundTraceActivityId,
-                storageAccountName,
-                taskHub,
-                taskMessage.Event.EventType.ToString(),
-                taskMessage.OrchestrationInstance.InstanceId,
-                taskMessage.OrchestrationInstance.ExecutionId,
-                Encoding.Unicode.GetByteCount(rawContent),
-                PartitionId: data.QueueName);
-
-            return new CloudQueueMessage(rawContent);
-        }
+        
 
         public bool TrySave(object relatedObject)
         {

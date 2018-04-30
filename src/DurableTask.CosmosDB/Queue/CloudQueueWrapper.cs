@@ -2,6 +2,7 @@
 using Microsoft.WindowsAzure.Storage.Queue;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -33,29 +34,30 @@ namespace DurableTask.CosmosDB.Queue
         }
 
         /// <inheritdoc />
-        public async Task DeleteMessageAsync(CloudQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
+        public async Task DeleteMessageAsync(IQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            await this.cloudQueue.DeleteMessageAsync(queueMessage, requestOptions, operationContext);
+            await this.cloudQueue.DeleteMessageAsync(((CloudQueueMessageWrapper)queueMessage).CloudQueueMessage, requestOptions, operationContext);
             
         }
 
         /// <inheritdoc />
-        public async Task<IEnumerable<CloudQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions controlQueueRequestOptions, OperationContext operationContext, CancellationToken cancellationToken)
+        public async Task<IEnumerable<IQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions controlQueueRequestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            return await this.cloudQueue.GetMessagesAsync(
+            return (await this.cloudQueue.GetMessagesAsync(
                 controlQueueBatchSize,
                 controlQueueVisibilityTimeout,
                 controlQueueRequestOptions,
                 operationContext,
                 cancellationToken
-                );
+                ))
+                .Select(x => new CloudQueueMessageWrapper(x));
         }
 
         /// <inheritdoc />
-        public async Task UpdateMessageAsync(CloudQueueMessage originalQueueMessage, TimeSpan controlQueueVisibilityTimeout, MessageUpdateFields visibility, QueueRequestOptions requestOptions, OperationContext operationContext)
+        public async Task UpdateMessageAsync(IQueueMessage originalQueueMessage, TimeSpan controlQueueVisibilityTimeout, MessageUpdateFields visibility, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
             await this.cloudQueue.UpdateMessageAsync(
-                originalQueueMessage,
+                ((CloudQueueMessageWrapper)originalQueueMessage).CloudQueueMessage,
                 controlQueueVisibilityTimeout,
                 visibility,
                 requestOptions,
@@ -71,9 +73,13 @@ namespace DurableTask.CosmosDB.Queue
 
         /// <inheritdoc />
 
-        public async Task<CloudQueueMessage> PeekMessageAsync()
+        public async Task<IQueueMessage> PeekMessageAsync()
         {
-            return await cloudQueue.PeekMessageAsync();
+            var cloudQueueMessage = await cloudQueue.PeekMessageAsync();
+            if (cloudQueueMessage != null)
+                return new CloudQueueMessageWrapper(cloudQueueMessage);
+
+            return null;
         }
 
         /// <inheritdoc />
