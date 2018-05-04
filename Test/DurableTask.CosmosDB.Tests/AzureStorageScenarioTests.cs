@@ -80,12 +80,12 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates function chaining by implementing a naive factorial function orchestration.
         /// </summary>
         [DataTestMethod]
-        [DataRow(null)]
-        [DataRow("leaseManagement")]
+        [DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
         [TestMethod]
-        public async Task SequentialOrchestration(string leaseManagementCollection = null)
+        public async Task SequentialOrchestration(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(leaseManagementCollection: leaseManagementCollection))
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 
@@ -106,11 +106,11 @@ namespace DurableTask.CosmosDB.Tests
         /// </summary>
         [TestMethod]
         [DataTestMethod]
-        //[DataRow(null)]
-        [DataRow("leaseManagement")]
-        public async Task ParallelOrchestration(string leaseManagementCollection = null)
+        [DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        public async Task ParallelOrchestration(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(leaseManagementCollection: leaseManagementCollection))
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 
@@ -129,9 +129,13 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates the ContinueAsNew functionality by implementing a counter actor pattern.
         /// </summary>
         [TestMethod]
-        public async Task ActorOrchestration()
+        [DataTestMethod]
+        [DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        public async Task ActorOrchestration(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 
@@ -148,15 +152,15 @@ namespace DurableTask.CosmosDB.Tests
                 // TODO: Sleeping to avoid a race condition where multiple ContinueAsNew messages
                 //       are processed by the same instance at the same time, resulting in a corrupt
                 //       storage failure in DTFx.
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "incr2");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "incr3");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "decr4");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
                 await client.RaiseEventAsync("operation", "incr5");
-                await Task.Delay(5000);
+                await Task.Delay(2000);
 
                 // Make sure it's still running and didn't complete early (or fail).
                 var status = await client.GetStatusAsync();
@@ -264,9 +268,12 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates that orchestrations run concurrently of each other (up to 100 by default).
         /// </summary>
         [TestMethod]
-        public async Task OrchestrationConcurrency()
+        [DataTestMethod]
+        [DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        public async Task OrchestrationConcurrency(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 
@@ -364,9 +371,12 @@ namespace DurableTask.CosmosDB.Tests
         /// Fan-out/fan-in test which ensures each operation is run only once.
         /// </summary>
         [TestMethod]
-        public async Task FanOutToTableStorage()
+        [DataTestMethod]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        [DataRow(OrchestrationBackendType.Storage)]
+        public async Task FanOutToTableStorage(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 
@@ -474,7 +484,7 @@ namespace DurableTask.CosmosDB.Tests
                 string currentDirectory = Directory.GetCurrentDirectory();
                 string originalFilePath = Path.Combine(currentDirectory, originalFileName);
                 byte[] readBytes = File.ReadAllBytes(originalFilePath);
-                
+
                 var client = await host.StartOrchestrationAsync(typeof(Orchestrations.EchoBytes), readBytes);
                 var status = await client.WaitForCompletionAsync(TimeSpan.FromMinutes(1));
 

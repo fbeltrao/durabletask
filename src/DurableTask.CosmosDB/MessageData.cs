@@ -16,6 +16,7 @@ namespace DurableTask.AzureStorage
     using System;
     using System.Runtime.Serialization;
     using DurableTask.Core;
+    using DurableTask.CosmosDB.Queue;
     using Microsoft.WindowsAzure.Storage.Queue;
 
     /// <summary>
@@ -60,7 +61,7 @@ namespace DurableTask.AzureStorage
 
         internal string QueueName { get; set; }
 
-        internal CloudQueueMessage OriginalQueueMessage { get; set; }
+        internal IQueueMessage OriginalQueueMessage { get; set; }
 
         internal long TotalMessageSizeBytes { get; set; }
 

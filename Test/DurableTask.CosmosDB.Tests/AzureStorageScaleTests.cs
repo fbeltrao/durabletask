@@ -43,21 +43,40 @@ namespace DurableTask.CosmosDB.Tests
         /// Basic validation of task hub creation.
         /// </summary>
         [TestMethod]
-        public async Task CreateTaskHub()
+        public async Task CreateStorageTaskHub()
         {
-            await this.EnsureTaskHubAsync(nameof(CreateTaskHub), testDeletion: false);
+            await this.EnsureStorageBasedTaskHubAsync(nameof(CreateStorageTaskHub), testDeletion: false);
+        }
+
+
+        /// <summary>
+        /// Basic validation of task hub creation.
+        /// </summary>
+        [TestMethod]
+        public async Task CreateCosmosDBTaskHub()
+        {
+            await this.EnsureCosmosDBBasedTaskHubAsync(nameof(CreateCosmosDBTaskHub), testDeletion: false);
         }
 
         /// <summary>
         /// Basic validation of task hub deletion.
         /// </summary>
         [TestMethod]
-        public async Task DeleteTaskHub()
+        public async Task DeleteStorageTaskHub()
         {
-            await this.EnsureTaskHubAsync(nameof(DeleteTaskHub), testDeletion: true);
+            await this.EnsureStorageBasedTaskHubAsync(nameof(DeleteStorageTaskHub), testDeletion: true);
         }
 
-        async Task<ExtensibleOrchestrationService> EnsureTaskHubAsync(
+        /// <summary>
+        /// Basic validation of task hub deletion.
+        /// </summary>
+        [TestMethod]
+        public async Task DeleteCosmosDBTaskHub()
+        {
+            await this.EnsureCosmosDBBasedTaskHubAsync(nameof(DeleteCosmosDBTaskHub), testDeletion: true);
+        }
+
+        async Task<ExtensibleOrchestrationService> EnsureStorageBasedTaskHubAsync(
             string testName, 
             bool testDeletion,
             bool deleteBeforeCreate = true,
@@ -91,17 +110,17 @@ namespace DurableTask.CosmosDB.Tests
 
             // Control queues
             Assert.IsNotNull(service.AllControlQueues, "Control queue collection was not initialized.");
-            CloudQueue[] controlQueues = service.AllControlQueues.ToArray();
+            var controlQueues = service.AllControlQueues.ToArray();
             Assert.AreEqual(4, controlQueues.Length, "Expected to see the default four control queues created.");
-            foreach (CloudQueue queue in controlQueues)
+            foreach (var queue in controlQueues)
             {
-                Assert.IsTrue(queue.Exists(), $"Queue {queue.Name} was not created.");
+                Assert.IsTrue(await queue.ExistsAsync(), $"Queue {queue.Name} was not created.");
             }
 
             // Work-item queue
-            CloudQueue workItemQueue = service.WorkItemQueue;
+            var workItemQueue = service.WorkItemQueue;
             Assert.IsNotNull(workItemQueue, "Work-item queue client was not initialized.");
-            Assert.IsTrue(workItemQueue.Exists(), $"Queue {workItemQueue.Name} was not created.");
+            Assert.IsTrue(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not created.");
 
             // TrackingStore
             ITrackingStore trackingStore = service.TrackingStore;
@@ -139,12 +158,12 @@ namespace DurableTask.CosmosDB.Tests
             {
                 await service.DeleteAsync();
 
-                foreach (CloudQueue queue in controlQueues)
+                foreach (var queue in controlQueues)
                 {
-                    Assert.IsFalse(queue.Exists(), $"Queue {queue.Name} was not deleted.");
+                    Assert.IsFalse(await queue.ExistsAsync(), $"Queue {queue.Name} was not deleted.");
                 }
 
-                Assert.IsFalse(workItemQueue.Exists(), $"Queue {workItemQueue.Name} was not deleted.");
+                Assert.IsFalse(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not deleted.");
 
                 try
                 {
@@ -159,12 +178,121 @@ namespace DurableTask.CosmosDB.Tests
             return service;
         }
 
+        async Task<ExtensibleOrchestrationService> EnsureCosmosDBBasedTaskHubAsync(
+           string testName,
+           bool testDeletion,
+           bool deleteBeforeCreate = true,
+           string workerId = "test")
+        {
+            string storageConnectionString = TestHelpers.GetTestStorageAccountConnectionString();
+            var storageAccount = CloudStorageAccount.Parse(storageConnectionString);
+
+            string taskHubName = testName;
+            var settings = new StorageOrchestrationServiceSettings
+            {
+                TaskHubName = taskHubName,
+                StorageConnectionString = storageConnectionString,
+                WorkerId = workerId,
+                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
+                CosmosDBLeaseManagementCollection = $"{testName}Lease"
+            };
+
+            Trace.TraceInformation($"Task Hub name: {taskHubName}");
+
+            var service = new ExtensibleOrchestrationService(settings);
+
+            if (deleteBeforeCreate)
+            {
+                await service.CreateAsync();
+            }
+            else
+            {
+                await service.CreateIfNotExistsAsync();
+            }
+
+            // Control queues
+            Assert.IsNotNull(service.AllControlQueues, "Control queue collection was not initialized.");
+            var controlQueues = service.AllControlQueues.ToArray();
+            Assert.AreEqual(4, controlQueues.Length, "Expected to see the default four control queues created.");
+            foreach (var queue in controlQueues)
+            {
+                Assert.IsTrue(await queue.ExistsAsync(), $"Queue {queue.Name} was not created.");
+            }
+
+            // Work-item queue
+            var workItemQueue = service.WorkItemQueue;
+            Assert.IsNotNull(workItemQueue, "Work-item queue client was not initialized.");
+            Assert.IsTrue(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not created.");
+
+            // TrackingStore
+            ITrackingStore trackingStore = service.TrackingStore;
+            Assert.IsNotNull(trackingStore, "Tracking Store was not initialized.");
+
+            try
+            {
+                Assert.IsTrue(trackingStore.ExistsAsync().Result, $"Tracking Store was not created.");
+            }
+            catch (NotSupportedException)
+            { }
+
+
+            // TODO: verify that the documents and collections have been created
+            /*string expectedContainerName = taskHubName.ToLowerInvariant() + "-leases";
+            CloudBlobContainer taskHubContainer = storageAccount.CreateCloudBlobClient().GetContainerReference(expectedContainerName);
+            Assert.IsTrue(taskHubContainer.Exists(), $"Task hub blob container {expectedContainerName} was not created.");
+
+            // Task Hub config blob
+            CloudBlob infoBlob = taskHubContainer.GetBlobReference("taskhub.json");
+            Assert.IsTrue(infoBlob.Exists(), $"The blob {infoBlob.Name} was not created.");
+
+            // Task Hub lease container
+            CloudBlobDirectory leaseDirectory = taskHubContainer.GetDirectoryReference("default");
+            IListBlobItem[] leaseBlobs = leaseDirectory.ListBlobs().ToArray();
+            Assert.AreEqual(controlQueues.Length, leaseBlobs.Length, "Expected to see the same number of control queues and lease blobs.");
+
+            foreach (IListBlobItem blobItem in leaseBlobs)
+            {
+                string path = blobItem.Uri.AbsolutePath;
+                Assert.IsTrue(
+                    controlQueues.Where(q => path.Contains(q.Name)).Any(),
+                    $"Could not find any known control queue name in the lease name {path}");
+            }
+            */
+            if (testDeletion)
+            {
+                await service.DeleteAsync();
+
+                foreach (var queue in controlQueues)
+                {
+                    Assert.IsFalse(await queue.ExistsAsync(), $"Queue {queue.Name} was not deleted.");
+                }
+
+                Assert.IsFalse(await workItemQueue.ExistsAsync(), $"Queue {workItemQueue.Name} was not deleted.");
+
+                try
+                {
+                    Assert.IsFalse(trackingStore.ExistsAsync().Result, $"Tracking Store was not deleted.");
+                }
+                catch (NotSupportedException)
+                { }
+
+                // TODO: Verify that the collection was deleted
+                //Assert.IsFalse(taskHubContainer.Exists(), $"Task hub blob container {taskHubContainer.Name} was not deleted.");
+            }
+
+            return service;
+        }
+
         /// <summary>
         /// REQUIREMENT: Workers can be added or removed at any time and control-queue partitions are load-balanced automatically.
         /// REQUIREMENT: No two workers will ever process the same control queue.
         /// </summary>
         [TestMethod]
-        public async Task MultiWorkerLeaseMovement()
+        [DataTestMethod]
+        [DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        public async Task MultiWorkerLeaseMovement(OrchestrationBackendType orchestrationBackendType)
         {
             const int MaxWorkerCount = 4;
 
@@ -180,11 +308,22 @@ namespace DurableTask.CosmosDB.Tests
                 {
                     Trace.TraceInformation($"Starting task hub service #{i}...");
                     workerIds[i] = $"worker{i}";
-                    services[i] = await this.EnsureTaskHubAsync(
-                        nameof(MultiWorkerLeaseMovement),
-                        testDeletion: false,
-                        deleteBeforeCreate: i == 0,
-                        workerId: workerIds[i]);
+                    if (orchestrationBackendType == OrchestrationBackendType.Storage)
+                    {
+                        services[i] = await this.EnsureStorageBasedTaskHubAsync(
+                            nameof(MultiWorkerLeaseMovement),
+                            testDeletion: false,
+                            deleteBeforeCreate: i == 0,
+                            workerId: workerIds[i]);
+                    }
+                    else
+                    {
+                        services[i] = await this.EnsureCosmosDBBasedTaskHubAsync(
+                           nameof(MultiWorkerLeaseMovement),
+                           testDeletion: false,
+                           deleteBeforeCreate: i == 0,
+                           workerId: workerIds[i]);
+                    }
                     await services[i].StartAsync();
                     currentWorkerCount++;
                 }
@@ -196,7 +335,9 @@ namespace DurableTask.CosmosDB.Tests
                     currentWorkerCount--;
                 }
 
-                TimeSpan timeout = Debugger.IsAttached ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(30);
+
+                TimeSpan timeout = TimeSpan.FromSeconds(30);
+                //TimeSpan timeout = Debugger.IsAttached ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(30);
                 Trace.TraceInformation($"Waiting for all leases to become balanced. Timeout = {timeout}.");
 
                 bool isBalanced = false;
@@ -205,19 +346,19 @@ namespace DurableTask.CosmosDB.Tests
                 while (sw.Elapsed < timeout)
                 {
                     Trace.TraceInformation($"Checking current lease distribution across {currentWorkerCount} workers...");
-                    var leases = (await services[0].ListBlobLeasesAsync())
+                    var leases = (await services[0].ListLeasesAsync())
                         .Select(
                             lease => new
                             {
-                                Name = ((BlobLease)lease).Blob.Name,
-                                State = ((BlobLease)lease).Blob.Properties.LeaseState,
+                                Name = lease is BlobLease ? ((BlobLease)lease).Blob.Name : ((CosmosDBLease)lease).Id,
+                                State = lease is BlobLease ? ((BlobLease)lease).Blob.Properties.LeaseState.ToString() : ((CosmosDBLease)lease).IsExpired() ? "Expired" : "Leased",
                                 Owner = lease.Owner,
                             })
                         .Where(lease => !string.IsNullOrEmpty(lease.Owner))
                         .ToArray();
 
                     Array.ForEach(leases, lease => Trace.TraceInformation(
-                        $"Blob: {lease.Name}, State: {lease.State}, Owner: {lease.Owner}"));
+                        $"Leases: {lease.Name}, State: {lease.State}, Owner: {lease.Owner}"));
 
                     isBalanced = false;
                     var workersWithLeases = leases.GroupBy(l => l.Owner).ToArray();
@@ -243,9 +384,9 @@ namespace DurableTask.CosmosDB.Tests
                                     continue;
                                 }
 
-                                foreach (CloudQueue controlQueue in service.OwnedControlQueues)
+                                foreach (var controlQueue in service.OwnedControlQueues)
                                 {
-                                    Assert.IsTrue(allQueueNames.Add(controlQueue.Name));
+                                    Assert.IsTrue(allQueueNames.Add(controlQueue.Name), $"Mismatch between owned control queues and all queues {controlQueue.Name}, all: {string.Join(",", allQueueNames)}");
                                 }
                                 
                                 Trace.TraceInformation(
@@ -261,8 +402,11 @@ namespace DurableTask.CosmosDB.Tests
                                 Assert.IsTrue(
                                     service.OwnedControlQueues.All(q => ownedLeases.Any(l => l.Name.Contains(q.Name))),
                                     "Mismatch between queue assignment and lease ownership.");
+
+                                IEnumerable<Task<bool>> allExistsTasks = service.OwnedControlQueues.Select(q => q.ExistsAsync());
+                                var allExistsResult = await Task.WhenAll(allExistsTasks);
                                 Assert.IsTrue(
-                                    service.OwnedControlQueues.All(q => q.Exists()),
+                                    allExistsResult.All(x => x),
                                     $"One or more control queues owned by {service.WorkerId} do not exist");
                             }
 
@@ -312,13 +456,12 @@ namespace DurableTask.CosmosDB.Tests
 
             OrchestrationInstance[] instances = await Task.WhenAll(createTasks);
 
-            CloudQueue[] controlQueues = service.AllControlQueues.ToArray();
+            var controlQueues = service.AllControlQueues.ToArray();
             Assert.AreEqual(settings.PartitionCount, controlQueues.Length, "Unexpected number of control queues");
 
-            foreach (CloudQueue cloudQueue in controlQueues)
+            foreach (var cloudQueue in controlQueues)
             {
-                await cloudQueue.FetchAttributesAsync();
-                int messageCount = cloudQueue.ApproximateMessageCount.GetValueOrDefault(-1);
+                int messageCount = await cloudQueue.GetQueueLenghtAsync();
 
                 Trace.TraceInformation($"Queue {cloudQueue.Name} has {messageCount} message(s).");
                 Assert.IsTrue(messageCount > 0, $"Queue {cloudQueue.Name} didn't receive any messages");
@@ -371,7 +514,7 @@ namespace DurableTask.CosmosDB.Tests
             };
 
             var service = new ExtensibleOrchestrationService(settings);
-            var monitor = new StorageDisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
+            var monitor = new StorageDisconnectedPerformanceMonitor(service, settings.TaskHubName);
 
             await service.DeleteAsync();
 
@@ -424,7 +567,7 @@ namespace DurableTask.CosmosDB.Tests
 
             var service = new ExtensibleOrchestrationService(settings);
 
-            var monitor = new StorageDisconnectedPerformanceMonitor(settings.StorageConnectionString, settings.TaskHubName);
+            var monitor = new StorageDisconnectedPerformanceMonitor(service, settings.TaskHubName);
             int simulatedWorkerCount = 0;
             await service.CreateAsync();
 
@@ -955,7 +1098,7 @@ namespace DurableTask.CosmosDB.Tests
 
         static FakePerformanceMonitor GetFakePerformanceMonitor()
         {
-            return new FakePerformanceMonitor(TestHelpers.GetTestStorageAccountConnectionString(), "taskHub");
+            return new FakePerformanceMonitor("taskHub");
         }
 
         class NoOpOrchestration : TaskOrchestration<string, string>
@@ -969,10 +1112,9 @@ namespace DurableTask.CosmosDB.Tests
         class FakePerformanceMonitor : StorageDisconnectedPerformanceMonitor
         {
             public FakePerformanceMonitor(
-                string storageConnectionString,
                 string taskHub,
                 int partitionCount = Utils.DefaultPartitionCount) 
-                : base(storageConnectionString, taskHub)
+                : base(null, taskHub)
             {
                 this.PartitionCount = partitionCount;
                 for (int i = 0; i < partitionCount; i++)

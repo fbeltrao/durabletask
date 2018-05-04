@@ -13,9 +13,12 @@
 
 namespace DurableTask.AzureStorage
 {
+    using DurableTask.AzureStorage.Monitoring;
+    using DurableTask.AzureStorage.Partitioning;
     using DurableTask.CosmosDB;
     using Microsoft.Azure.Documents;
     using Microsoft.Azure.Documents.Client;
+    using Microsoft.WindowsAzure.Storage;
     using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
@@ -69,6 +72,11 @@ namespace DurableTask.AzureStorage
         internal static long ToUnixTime(DateTime date)
         {
             return Convert.ToInt64((date - epoch).TotalSeconds);
+        }
+
+        internal static string GetControlQueueId(string taskHubName, int partitionIndex)
+        {
+            return $"{taskHubName.ToLowerInvariant()}hub-control-{partitionIndex:00}";
         }
     }
 

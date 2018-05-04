@@ -27,13 +27,11 @@ using Newtonsoft.Json;
 
 namespace DurableTask.AzureStorage
 {
-    internal partial class CosmosDBLeaseManager : ILeaseManager
+    internal partial class CosmosDBLeaseManager : ILeaseManager, IDisposable
     {
         private string taskHubName;
         private string workerId;
         private readonly string cosmosDBName;
-        const string AcquireLeaseStoredProcedureName = "acquireLease";
-        const string ReleaseLeaseStoredProcedureName = "releaseLease";
         private string cosmosDBEndpoint;
         private string cosmosDBAuthKey;
         private string cosmosDBLeaseManagementCollection;
@@ -43,13 +41,13 @@ namespace DurableTask.AzureStorage
         private DocumentClient documentClient;
 
         public CosmosDBLeaseManager(
-            string taskHubName, 
-            string workerId, 
-            string cosmosDBEndpoint, 
-            string cosmosDBAuthKey, 
-            string cosmosDBLeaseManagementCollection, 
-            TimeSpan leaseInterval, 
-            TimeSpan leaseRenewInterval, 
+            string taskHubName,
+            string workerId,
+            string cosmosDBEndpoint,
+            string cosmosDBAuthKey,
+            string cosmosDBLeaseManagementCollection,
+            TimeSpan leaseInterval,
+            TimeSpan leaseRenewInterval,
             AzureStorageOrchestrationServiceStats stats)
         {
             this.taskHubName = taskHubName;
@@ -64,14 +62,14 @@ namespace DurableTask.AzureStorage
 
             this.Initialize();
         }
-        
+
 
         public async Task<bool> LeaseStoreExistsAsync()
         {
             try
             {
                 var collectionUri = UriFactory.CreateDocumentCollectionUri(
-                    this.cosmosDBName, 
+                    this.cosmosDBName,
                     this.cosmosDBLeaseManagementCollection);
 
                 var getCollectionResponse = await this.documentClient.ReadDocumentCollectionAsync(collectionUri);
@@ -111,9 +109,9 @@ namespace DurableTask.AzureStorage
 
             for (int i = 0; i < eventHubInfo.PartitionCount; i++)
             {
-                var id = $"{taskHubName}-control-{i.ToString("00")}";
+                var id = Utils.GetControlQueueId(taskHubName, i);
                 await CreatePartitionDocumentIfNotExist(id, eventHubInfo.TaskHubName);
-            } 
+            }
 
             await this.CreateTaskHubInfoIfNotExistAsync(eventHubInfo);
 
@@ -150,24 +148,36 @@ namespace DurableTask.AzureStorage
         public async Task<IEnumerable<Lease>> ListLeasesAsync()
         {
             var leases = new List<CosmosDBLease>();
-
-            var feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
-                UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
-                .Where(d => d.TaskHubName == taskHubName)
-                .AsDocumentQuery();
-
-            while (feed.HasMoreResults)
+            try
             {
-                FeedResponse<Document> items = await feed.ExecuteNextAsync<Document>();
-                foreach (var f in items)
+
+                var feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
+                    UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
+                    .Where(d => d.TaskHubName == taskHubName)
+                    .AsDocumentQuery();
+
+                while (feed.HasMoreResults)
                 {
-                    var l = JsonConvert.DeserializeObject<CosmosDBLease>(f.ToString());
-                    l.Token = f.ETag;
-                    leases.Add(l);
+                    FeedResponse<Document> items = await feed.ExecuteNextAsync<Document>();
+                    foreach (var f in items)
+                    {
+                        var l = JsonConvert.DeserializeObject<CosmosDBLease>(f.ToString());
+                        l.Token = f.ETag;
+                        leases.Add(l);
+                    }
                 }
             }
-            
-            return leases;
+            catch (DocumentClientException ex)
+            {
+                if (ex.StatusCode != HttpStatusCode.NotFound)
+                    throw;
+            }
+            finally
+            {
+                this.stats.CosmosDBRequests.Increment();
+            }
+
+            return leases.OrderBy(x => x.PartitionId);
         }
 
         public async Task CreateLeaseIfNotExistAsync(string partition)
@@ -219,17 +229,12 @@ namespace DurableTask.AzureStorage
             }
         }
 
-        private string GetPartitionId(string partition)
-        {
-            return string.Concat(this.taskHubName, "-", partition);
-        }
-
         public async Task<Lease> GetLeaseAsync(string partitionId)
         {
             try
             {
                 var res = await this.documentClient.ReadDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, GetPartitionId(partitionId)));
+                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, partitionId));
 
                 var lease = (CosmosDBLease)(dynamic)res.Resource;
                 lease.Token = res.Resource.ETag;
@@ -241,21 +246,25 @@ namespace DurableTask.AzureStorage
                 if (ex.StatusCode != System.Net.HttpStatusCode.NotFound)
                     throw;
             }
-            
+
             return null;
         }
 
         public async Task<bool> RenewAsync(Lease lease)
         {
-            
+
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
-                cosmosDBLease.LeaseTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval));
+                var desiredLeaseState = new CosmosDBLease(cosmosDBLease)
+                {
+                    LeaseTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval)),
+                    Epoch = cosmosDBLease.Epoch + 1,
+                };
 
                 var res = await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
-                    cosmosDBLease,
+                    desiredLeaseState,
                     new RequestOptions
                     {
                         AccessCondition = new AccessCondition
@@ -264,7 +273,10 @@ namespace DurableTask.AzureStorage
                             Type = AccessConditionType.IfMatch
                         }
                     });
-                lease.Token = res.Resource.ETag;
+
+                cosmosDBLease.Token = res.Resource.ETag;
+                cosmosDBLease.Epoch = desiredLeaseState.Epoch;
+                cosmosDBLease.LeaseTimeout = desiredLeaseState.LeaseTimeout;
             }
             catch (DocumentClientException ex)
             {
@@ -283,27 +295,42 @@ namespace DurableTask.AzureStorage
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
-                var newTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval));
-                var res = await this.documentClient.ExecuteStoredProcedureAsync<StoredProcedureResponse<CosmosDBLease>>(
-                    UriFactory.CreateStoredProcedureUri(cosmosDBName, cosmosDBLeaseManagementCollection, AcquireLeaseStoredProcedureName),
-                    cosmosDBLease.Id,
-                    cosmosDBLease.Token,
-                    newTimeout);
 
+                var desiredLeaseState = new CosmosDBLease(cosmosDBLease)
+                {
+                    LeaseTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval)),
+                    Owner = owner,
+                    Epoch = cosmosDBLease.Epoch + 1,
+                };
 
-                // TODO: update the token
-                //cosmosDBLease.Token = res.Response;
-                this.stats.CosmosDBRequests.Increment();
-                lease.Owner = owner;
-                // Increment Epoch each time lease is acquired or stolen by new host
-                lease.Epoch += 1;
+                var updateResponse = await this.documentClient.UpsertDocumentAsync(
+                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    desiredLeaseState,
+                    new RequestOptions
+                    {
+                        AccessCondition = new AccessCondition
+                        {
+                            Condition = cosmosDBLease.Token,
+                            Type = AccessConditionType.IfMatch
+                        }
+                    });
 
-                // TODO: update document again?
+                if (updateResponse.StatusCode == HttpStatusCode.OK)
+                {
+                    cosmosDBLease.Token = updateResponse.Resource.ETag;
+                    cosmosDBLease.Owner = owner;
+                    cosmosDBLease.LeaseTimeout = desiredLeaseState.LeaseTimeout;
+                    cosmosDBLease.Epoch = desiredLeaseState.Epoch;
+                }
             }
             catch (DocumentClientException documentClientException)
             {
-                this.stats.CosmosDBRequests.Increment();
                 throw HandleDocumentClientException(lease, documentClientException);
+            }
+            finally
+            {
+                this.stats.CosmosDBRequests.Increment();
+
             }
 
             return true;
@@ -314,14 +341,17 @@ namespace DurableTask.AzureStorage
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
-                var copy = new CosmosDBLease(cosmosDBLease);
-                copy.Owner = null;
-                copy.Token = null;
-                copy.LeaseTimeout = 0;
+                var desiredLeaseState = new CosmosDBLease(cosmosDBLease)
+                {
+                    Owner = null,
+                    LeaseTimeout = 0,
+                    Epoch = cosmosDBLease.Epoch + 1
+                };
+
 
                 var res = await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, copy.Id),
-                    copy,
+                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    desiredLeaseState,
                     new RequestOptions
                     {
                         AccessCondition = new AccessCondition
@@ -331,14 +361,18 @@ namespace DurableTask.AzureStorage
                         }
                     });
 
-                lease.Token = null;
+                lease.Token = res.Resource.ETag;
                 lease.Owner = null;
+                lease.Epoch = desiredLeaseState.Epoch;
 
-                this.stats.CosmosDBRequests.Increment();
             }
             catch (DocumentClientException documentClientException)
             {
                 throw HandleDocumentClientException(lease, documentClientException);
+            }
+            finally
+            {
+                this.stats.CosmosDBRequests.Increment();
             }
 
             return true;
@@ -350,7 +384,15 @@ namespace DurableTask.AzureStorage
             try
             {
                 await this.documentClient.DeleteDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, cosmosDBLease.Id));
+                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, cosmosDBLease.Id),
+                    new RequestOptions
+                    {
+                        AccessCondition = new AccessCondition
+                        {
+                            Condition = cosmosDBLease.Token,
+                            Type = AccessConditionType.IfMatch
+                        }
+                    });
             }
             finally
             {
@@ -358,19 +400,21 @@ namespace DurableTask.AzureStorage
             }
         }
 
-        public Task DeleteAllAsync()
+        public async Task DeleteAllAsync()
         {
             try
             {
-
-                // TODO: delete task hub info
+                // for now just loop through leases and delete them
+                // Better solution would be to call a stored procedure that will do it in a single batch
+                foreach (var lease in await this.ListLeasesAsync())
+                {
+                    await DeleteAsync(lease);
+                }
             }
             finally
             {
-                //this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDBRequests.Increment();
             }
-
-            return Task.FromResult<object>(null);
         }
 
         public async Task<bool> UpdateAsync(Lease lease)
@@ -394,7 +438,7 @@ namespace DurableTask.AzureStorage
                         }
                     });
 
-         
+
             }
             catch (DocumentClientException documentClientException)
             {
@@ -407,7 +451,7 @@ namespace DurableTask.AzureStorage
 
             return true;
         }
-        
+
         string GetTaskHubInfoDocumentId()
         {
             return string.Concat(this.taskHubName, "-", "taskhubinfo");
@@ -462,7 +506,7 @@ namespace DurableTask.AzureStorage
 
         void Initialize()
         {
-            this.documentClient = new DocumentClient(new Uri(this.cosmosDBEndpoint), this.cosmosDBAuthKey);      
+            this.documentClient = new DocumentClient(new Uri(this.cosmosDBEndpoint), this.cosmosDBAuthKey);
         }
 
         async Task<TaskHubInfo> GetTaskHubInfoAsync()
@@ -499,6 +543,14 @@ namespace DurableTask.AzureStorage
             }
 
             return exception;
+        }
+
+        public void Dispose()
+        {
+            if (this.documentClient != null)
+            {
+                this.documentClient.Dispose();
+            }
         }
     }
 }
