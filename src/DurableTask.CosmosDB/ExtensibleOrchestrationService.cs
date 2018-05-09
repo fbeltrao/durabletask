@@ -97,9 +97,9 @@ namespace DurableTask.AzureStorage
             this.tableEntityConverter = new TableEntityConverter();
             this.stats = new AzureStorageOrchestrationServiceStats();
 
-            //if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-            //    this.queueManager = new StorageQueueManager(settings, stats);
-            //else
+            if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                this.queueManager = new StorageQueueManager(settings, stats);
+            else
                 this.queueManager = new CosmosDBQueueManager(settings, stats);
 
             if (customInstanceStore == null)
