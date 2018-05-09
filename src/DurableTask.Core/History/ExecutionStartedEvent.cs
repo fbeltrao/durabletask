@@ -25,7 +25,12 @@ namespace DurableTask.Core.History
         /// <summary>
         /// The orchestration instance for this event
         /// </summary>
-        [DataMember] public OrchestrationInstance OrchestrationInstance;
+        [DataMember] public OrchestrationInstance OrchestrationInstance { get; set; }
+
+        /// <summary>
+        /// Constructor for serialization
+        /// </summary>
+        internal ExecutionStartedEvent() {  }
 
         /// <summary>
         /// Creates a new ExecutionStartedEvent with the supplied parameters

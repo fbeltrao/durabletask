@@ -97,7 +97,10 @@ namespace DurableTask.AzureStorage
             this.tableEntityConverter = new TableEntityConverter();
             this.stats = new AzureStorageOrchestrationServiceStats();
 
-            this.queueManager = new StorageQueueManager(settings, stats);
+            if (!string.IsNullOrEmpty(settings.StorageConnectionString))
+                this.queueManager = new StorageQueueManager(settings, stats);
+            else
+                this.queueManager = new CosmosDBQueueManager(settings, stats);
 
             if (customInstanceStore == null)
             {
@@ -158,6 +161,7 @@ namespace DurableTask.AzureStorage
                     settings.WorkerId,
                     settings.CosmosDBEndpoint,
                     settings.CosmosDBAuthKey,
+                    settings.CosmosDBName,
                     settings.CosmosDBLeaseManagementCollection,
                     settings.LeaseInterval,
                     settings.LeaseRenewInterval,

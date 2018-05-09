@@ -41,18 +41,19 @@ namespace DurableTask.AzureStorage
         private DocumentClient documentClient;
 
         public CosmosDBLeaseManager(
-            string taskHubName,
-            string workerId,
-            string cosmosDBEndpoint,
-            string cosmosDBAuthKey,
-            string cosmosDBLeaseManagementCollection,
-            TimeSpan leaseInterval,
-            TimeSpan leaseRenewInterval,
+            string taskHubName, 
+            string workerId, 
+            string cosmosDBEndpoint, 
+            string cosmosDBAuthKey, 
+            string cosmosDBName,
+            string cosmosDBLeaseManagementCollection, 
+            TimeSpan leaseInterval, 
+            TimeSpan leaseRenewInterval, 
             AzureStorageOrchestrationServiceStats stats)
         {
             this.taskHubName = taskHubName;
             this.workerId = workerId;
-            this.cosmosDBName = "durabletask";
+            this.cosmosDBName = cosmosDBName;
             this.cosmosDBEndpoint = cosmosDBEndpoint;
             this.cosmosDBAuthKey = cosmosDBAuthKey;
             this.cosmosDBLeaseManagementCollection = cosmosDBLeaseManagementCollection;
@@ -457,13 +458,30 @@ namespace DurableTask.AzureStorage
             return string.Concat(this.taskHubName, "-", "taskhubinfo");
         }
 
+        public class CosmosDBTaskHubInfoWrapper
+        {
+            public string id { get; set; }
+
+            public CosmosDBTaskHubInfoWrapper()
+            {                
+            }
+
+            public CosmosDBTaskHubInfoWrapper(string id, TaskHubInfo taskHubInfo)
+            {
+                this.id = id;
+                TaskHubInfo = taskHubInfo;
+            }
+
+            public TaskHubInfo TaskHubInfo { get; set;  }
+        }
+
         public async Task CreateTaskHubInfoIfNotExistAsync(TaskHubInfo taskHubInfo)
         {
             try
             {
-                await this.documentClient.CreateDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, GetTaskHubInfoDocumentId()),
-                    taskHubInfo);
+                await this.documentClient.UpsertDocumentAsync(
+                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    new CosmosDBTaskHubInfoWrapper(GetTaskHubInfoDocumentId(), taskHubInfo));
             }
             catch (DocumentClientException)
             {
@@ -513,9 +531,9 @@ namespace DurableTask.AzureStorage
         {
             try
             {
-                var res = await this.documentClient.ReadDocumentAsync<DocumentResponse<TaskHubInfo>>(
+                var res = await this.documentClient.ReadDocumentAsync<DocumentResponse<CosmosDBTaskHubInfoWrapper>>(
                          UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, GetTaskHubInfoDocumentId()));
-                return res.Document.Document;
+                return res.Document?.Document?.TaskHubInfo;
             }
             catch (DocumentClientException documentClientException)
             {

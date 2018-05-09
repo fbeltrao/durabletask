@@ -147,6 +147,21 @@ namespace DurableTask.AzureStorage
             return new ReceivedMessageContext(queueMessage.Id, storageAccountName, taskHub, newTraceActivityId, data);
         }
 
+        public static ReceivedMessageContext CreateFromReceivedMessage(
+            MessageData data,
+            string storageAccountName,
+            string taskHub,
+            string queueMessageId,
+            string queueName)
+        {            
+            Guid newTraceActivityId = StartNewLogicalTraceScope();
+            TraceMessageReceived(storageAccountName, taskHub, data);
+
+            return new ReceivedMessageContext(queueMessageId, storageAccountName, taskHub, newTraceActivityId, data);
+        }
+
+
+
         static Guid StartNewLogicalTraceScope()
         {
             // This call sets the activity trace ID both on the current thread context

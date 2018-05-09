@@ -39,6 +39,11 @@ namespace DurableTask.Core.History
     public abstract class HistoryEvent : IExtensibleDataObject
     {
         /// <summary>
+        /// Constructor for serialization
+        /// </summary>
+        public HistoryEvent() { }
+
+        /// <summary>
         /// Creates a new history event with the supplied eventid
         /// </summary>
         /// <param name="eventId">The integer event id</param>
