@@ -25,10 +25,13 @@ namespace DurableTask.CosmosDB.Tests
     using DurableTask.AzureStorage;
     using DurableTask.Core;
     using DurableTask.Core.Exceptions;
+    using DurableTask.Core.History;
+    using DurableTask.CosmosDB.Queue;
     using Microsoft.Practices.EnterpriseLibrary.SemanticLogging.Utility;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Table;
+    using Newtonsoft.Json;
     using Newtonsoft.Json.Linq;
 
     [TestClass]
@@ -38,9 +41,11 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates a simple orchestrator function which doesn't call any activity functions.
         /// </summary>
         [TestMethod]
-        public async Task HelloWorldOrchestration_Inline()
+        //[DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.CosmosDB)]
+        public async Task HelloWorldOrchestration_Inline(OrchestrationBackendType orchestrationBackendType)
         {
-            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
+            using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
             {
                 await host.StartAsync();
 
@@ -670,6 +675,224 @@ namespace DurableTask.CosmosDB.Tests
 
                 await host.StopAsync();
             }
+        }
+
+        [TestMethod]
+        public void DeserializationArrayTest()
+        {
+            var plainJson = @"[
+    {
+        ""$type"": ""DurableTask.CosmosDB.Queue.CosmosDBQueueMessage, DurableTask.CosmosDB"",
+        ""insertionTime"": null,
+        ""id"": ""7563dc12-6ba8-47be-9d9b-db70c58ebc08"",
+        ""dequeueCount"": 1,
+        ""nextVisibleTime"": null,
+        ""TimeToLive"": 0,
+        ""Data"": {
+                ""$type"": ""DurableTask.Core.TaskMessage, DurableTask.Core"",
+            ""Event"": {
+                    ""$type"": ""DurableTask.Core.History.ExecutionStartedEvent, DurableTask.Core"",
+                ""OrchestrationInstance"": {
+                        ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+                    ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+                    ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+                },
+                ""EventType"": 0,
+                ""ParentInstance"": null,
+                ""Name"": ""DurableTask.CosmosDB.Tests.AzureStorageScenarioTests+Orchestrations+SayHelloInline"",
+                ""Version"": """",
+                ""Input"": ""\""World\"""",
+                ""Tags"": null,
+                ""EventId"": -1,
+                ""IsPlayed"": false,
+                ""Timestamp"": ""2018-05-09T08:28:27.5651976Z""
+            },
+            ""SequenceNumber"": 0,
+            ""OrchestrationInstance"": {
+                    ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+                ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+                ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+            }
+            },
+        ""status"": ""InProgress"",
+        ""queuedTime"": 0,
+        ""processStartTime"": 0,
+        ""completedTime"": 0,
+        ""currentWorker"": null,
+        ""workerExpires"": 0,
+        ""errors"": 0,
+        ""queueName"": ""testhub-control-00"",
+        ""_rid"": ""jppIAK8TKQcgAAAAAAAAAA=="",
+        ""_self"": ""dbs/jppIAA==/colls/jppIAK8TKQc=/docs/jppIAK8TKQcgAAAAAAAAAA==/"",
+        ""_etag"": ""\""00000000-0000-0000-e76f-b5049c6c01d3\"""",
+        ""_attachments"": ""attachments/"",
+        ""lockedUntil"": """"
+    }
+]
+";
+
+            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDBQueueMessage>>(plainJson,
+                new JsonSerializerSettings
+                {
+                    TypeNameHandling = TypeNameHandling.Objects,                    
+                });
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(1, result.Count());
+            Assert.IsNotNull(result.First().Data);
+        }
+
+        [TestMethod]
+        public void DeserializationSingleTest()
+        {
+            var plainJson = @"
+{
+    ""$type"": ""DurableTask.CosmosDB.Queue.CosmosDBQueueMessage, DurableTask.CosmosDB"",
+    ""insertionTime"": null,
+    ""id"": ""7563dc12-6ba8-47be-9d9b-db70c58ebc08"",
+    ""dequeueCount"": 1,
+    ""nextVisibleTime"": null,
+    ""TimeToLive"": 0,
+    ""Data"": {
+        ""$type"": ""DurableTask.Core.TaskMessage, DurableTask.Core"",
+        ""Event"": {
+            ""$type"": ""DurableTask.Core.History.ExecutionStartedEvent, DurableTask.Core"",
+            ""OrchestrationInstance"": {
+                ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+                ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+                ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+            },
+            ""EventType"": 0,
+            ""ParentInstance"": null,
+            ""Name"": ""DurableTask.CosmosDB.Tests.AzureStorageScenarioTests+Orchestrations+SayHelloInline"",
+            ""Version"": """",
+            ""Input"": ""\""World\"""",
+            ""Tags"": null,
+            ""EventId"": -1,
+            ""IsPlayed"": false,
+            ""Timestamp"": ""2018-05-09T08:28:27.5651976Z""
+        },
+        ""SequenceNumber"": 0,
+        ""OrchestrationInstance"": {
+            ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+            ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+            ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+        }
+    },
+    ""status"": ""InProgress"",
+    ""queuedTime"": 0,
+    ""processStartTime"": 0,
+    ""completedTime"": 0,
+    ""currentWorker"": null,
+    ""workerExpires"": 0,
+    ""errors"": 0,
+    ""queueName"": ""testhub-control-00"",
+    ""_rid"": ""jppIAK8TKQcgAAAAAAAAAA=="",
+    ""_self"": ""dbs/jppIAA==/colls/jppIAK8TKQc=/docs/jppIAK8TKQcgAAAAAAAAAA==/"",
+    ""_etag"": ""\""00000000-0000-0000-e76f-b5049c6c01d3\"""",
+    ""_attachments"": ""attachments/"",
+    ""lockedUntil"": """"
+}
+";
+
+            var result = JsonConvert.DeserializeObject<CosmosDBQueueMessage>(plainJson,
+                new JsonSerializerSettings
+                {
+                    TypeNameHandling = TypeNameHandling.Objects,
+                });
+
+            Assert.IsNotNull(result);
+            Assert.IsInstanceOfType(result, typeof(CosmosDBQueueMessage));
+            var qm = (CosmosDBQueueMessage)result;
+            Assert.AreEqual(1, qm.DequeueCount);
+            Assert.AreEqual(QueueItemStatus.InProgress, qm.status);
+            Assert.AreEqual("testhub-control-00", qm.queueName);
+            Assert.AreEqual("7563dc12-6ba8-47be-9d9b-db70c58ebc08", qm.Id);
+            Assert.IsNotNull(qm.Data);
+        }
+
+
+        [TestMethod]
+        public void DeserializeTaskMessage()
+        {
+            var plainJson = @"
+                {
+                    ""$type"": ""DurableTask.Core.TaskMessage, DurableTask.Core"",
+                    ""Event"": {
+                        ""$type"": ""DurableTask.Core.History.ExecutionStartedEvent, DurableTask.Core"",
+                        ""OrchestrationInstance"": {
+                            ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+                            ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+                            ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+                        },
+                        ""EventType"": 0,
+                        ""ParentInstance"": null,
+                        ""Name"": ""DurableTask.CosmosDB.Tests.AzureStorageScenarioTests+Orchestrations+SayHelloInline"",
+                        ""Version"": """",
+                        ""Input"": ""\""World\"""",
+                        ""Tags"": null,
+                        ""EventId"": -1,
+                        ""IsPlayed"": false,
+                        ""Timestamp"": ""2018-05-09T08:28:27.5651976Z""
+                    },
+                    ""SequenceNumber"": 0,
+                    ""OrchestrationInstance"": {
+                        ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+                        ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+                        ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+                    }
+            }";
+
+
+            var result = JsonConvert.DeserializeObject(plainJson,
+                new JsonSerializerSettings
+                {
+                    TypeNameHandling = TypeNameHandling.All,
+                });
+
+            Assert.IsNotNull(result);
+            Assert.IsInstanceOfType(result, typeof(TaskMessage));
+            var tm = (TaskMessage)result;
+            Assert.AreEqual(0, tm.SequenceNumber);
+
+            Assert.IsInstanceOfType(tm.Event, typeof(ExecutionStartedEvent));
+            var executionStartedEvent = (ExecutionStartedEvent)tm.Event;
+            Assert.AreEqual("DurableTask.CosmosDB.Tests.AzureStorageScenarioTests+Orchestrations+SayHelloInline", executionStartedEvent.Name);
+            Assert.AreEqual(@"""World""", executionStartedEvent.Input);
+        }
+
+
+        [TestMethod]
+        public void DeserializeExecutionStartedEvent()
+        {
+            var plainJson = @"            
+                {
+                    ""$type"": ""DurableTask.Core.History.ExecutionStartedEvent, DurableTask.Core"",
+                    ""OrchestrationInstance"": {
+                        ""$type"": ""DurableTask.Core.OrchestrationInstance, DurableTask.Core"",
+                        ""InstanceId"": ""c23bddd404cb4cdfbf91d8420bf23a83"",
+                        ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
+                    },
+                    ""EventType"": 0,
+                    ""ParentInstance"": null,
+                    ""Name"": ""DurableTask.CosmosDB.Tests.AzureStorageScenarioTests+Orchestrations+SayHelloInline"",
+                    ""Version"": """",
+                    ""Input"": ""\""World\"""",
+                    ""Tags"": null,
+                    ""EventId"": -1,
+                    ""IsPlayed"": false,
+                    ""Timestamp"": ""2018-05-09T08:28:27.5651976Z""
+                }";
+
+
+            var result = JsonConvert.DeserializeObject(plainJson,
+                new JsonSerializerSettings
+                {
+                    TypeNameHandling = TypeNameHandling.All,
+                });
+
+            Assert.IsNotNull(result);
+            Assert.IsInstanceOfType(result, typeof(ExecutionStartedEvent));
         }
 
         static class Orchestrations

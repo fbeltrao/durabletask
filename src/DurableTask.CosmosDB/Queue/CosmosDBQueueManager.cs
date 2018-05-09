@@ -1,84 +1,230 @@
-﻿//using System;
-//using System.Collections.Concurrent;
-//using System.Collections.Generic;
-//using System.Text;
-//using System.Threading;
-//using System.Threading.Tasks;
-//using DurableTask.AzureStorage;
-//using DurableTask.Core;
-//using Microsoft.WindowsAzure.Storage;
-//using Microsoft.WindowsAzure.Storage.Queue;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using DurableTask.AzureStorage;
+using DurableTask.AzureStorage.Monitoring;
+using DurableTask.Core;
+using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Queue;
 
-//namespace DurableTask.CosmosDB.Queue
-//{
-//    class CosmosDBQueueManager : IQueueManager
-//    {
-//        private readonly StorageOrchestrationServiceSettings settings;
-//        ConcurrentDictionary<string, IQueue> allControlQueues;
-//        ConcurrentDictionary<string, IQueue> ownedControlQueues;
-//        IQueue workItemQueue;
+namespace DurableTask.CosmosDB.Queue
+{
+    /// <summary>
+    /// Queue manager based on CosmosDB
+    /// </summary>
+    class CosmosDBQueueManager : IQueueManager
+    {
+        private readonly IExtensibleOrchestrationServiceSettings settings;
+        private readonly AzureStorageOrchestrationServiceStats stats;
+        ConcurrentDictionary<string, IQueue> allControlQueues;
+        ConcurrentDictionary<string, IQueue> ownedControlQueues;
+        IQueue workItemQueue;
 
-//        public CosmosDBQueueManager(StorageOrchestrationServiceSettings settings)
-//        {
-//            this.settings = settings;
-//        }
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="settings"></param>
+        /// <param name="stats"></param>
+        public CosmosDBQueueManager(IExtensibleOrchestrationServiceSettings settings, AzureStorageOrchestrationServiceStats stats)
+        {
+            this.settings = settings;
+            this.stats = stats;
 
-//        public ConcurrentDictionary<string, IQueue> AllControlQueues => allControlQueues;
+            this.allControlQueues = new ConcurrentDictionary<string, IQueue>();
+            this.ownedControlQueues = new ConcurrentDictionary<string, IQueue>();
 
-//        public ConcurrentDictionary<string, IQueue> OwnedControlQueues => ownedControlQueues;
+            var workItemQueueName = $"{this.settings.TaskHubName.ToLowerInvariant()}-workitems";
+            this.workItemQueue = GetQueue(workItemQueueName);
 
-//        public IQueue WorkItemQueue => workItemQueue;
+            for (int i = 0; i < this.settings.PartitionCount; i++)
+            {
+                var queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i));
+                this.allControlQueues.TryAdd(queue.Name, queue);
+            }
+        }
 
-//        public string StorageName => this.settings.CosmosDBEndpoint;
+        CosmosDBQueue GetQueue(string name)
+        {
+            var queueSettings = new CosmosDBQueueSettings
+            {
+                QueueCollectionDefinition = new CosmosDBCollectionDefinition
+                {
+                    CollectionName = "queue",
+                    DbName = this.settings.CosmosDBName,
+                    Endpoint = this.settings.CosmosDBEndpoint,
+                    SecretKey = this.settings.CosmosDBAuthKey,
+                }
+            };
 
-//        public Task AddMessageAsync(IQueue queue, TaskMessage message, TimeSpan? timeToLive, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions, OperationContext operationContext)
-//        {
-//            throw new NotImplementedException();
-//        }
+            var queue = new CosmosDBQueue(queueSettings, name);
+            return queue;
+        }
 
-//        public Task DeleteAsync()
-//        {
-//            throw new NotImplementedException();
-//        }
+        /// <inheritdoc />
+        public ConcurrentDictionary<string, IQueue> AllControlQueues => allControlQueues;
 
-//        public Task EnqueueMessageAsync(IQueue queue, ReceivedMessageContext context, TaskMessage taskMessage, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions)
-//        {
-//            throw new NotImplementedException();
-//        }
+        /// <inheritdoc />
+        public ConcurrentDictionary<string, IQueue> OwnedControlQueues => ownedControlQueues;
 
-//        public IQueue GetControlQueue(int partitionIndex)
-//        {
-//            throw new NotImplementedException();
-//        }
+        /// <inheritdoc />
+        public IQueue WorkItemQueue => workItemQueue;
 
-//        public Task<IQueue> GetControlQueueAsync(string partitionId)
-//        {
-//            throw new NotImplementedException();
-//        }
+        /// <inheritdoc />
+        public string StorageName => this.settings.CosmosDBEndpoint;
 
-//        public Task<IQueue[]> GetControlQueuesAsync(int partitionCount)
-//        {
-//            throw new NotImplementedException();
-//        }
+        /// <inheritdoc />
+        public async Task AddMessageAsync(IQueue queue, TaskMessage message, TimeSpan? timeToLive, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions, OperationContext operationContext)
+        {
+            var cosmosQueue = (CosmosDBQueue)queue;
 
-//        public Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
-//        {
-//            throw new NotImplementedException();
-//        }
+            // We transfer to a new trace activity ID every time a new outbound queue message is created.
+            Guid outboundTraceActivityId = Guid.NewGuid();
 
-//        public Task<List<MessageData>> GetMessagesAsync(CancellationToken cancellationToken)
-//        {
-//            throw new NotImplementedException();
-//        }
+            var data = new MessageData(message, outboundTraceActivityId, queue.Name);
 
-//        public IQueue GetQueue(string partitionId)
-//        {
-//            throw new NotImplementedException();
-//        }
+            var msg = new CosmosDBQueueMessage
+            {
+                Data = data,
+            };
 
-//        public Task StartAsync()
-//        {
-//            throw new NotImplementedException();
-//        }
-//    }
-//}
+            if (timeToLive.HasValue)
+            {
+                msg.TimeToLive = Utils.ToUnixTime(DateTime.UtcNow.Add(timeToLive.Value));
+            }
+
+            if (initialVisibilityDelay.HasValue)
+            {
+                msg.NextVisibleTime = DateTime.UtcNow.Add(initialVisibilityDelay.Value);
+            }
+
+            await cosmosQueue.Enqueue(msg);
+
+        }
+
+        /// <inheritdoc />
+        public async Task DeleteAsync()
+        {
+            foreach (string partitionId in this.allControlQueues.Keys)
+            {
+                if (this.allControlQueues.TryGetValue(partitionId, out var controlQueue))
+                {
+                    await controlQueue.DeleteIfExistsAsync();
+                }
+            }
+
+            await this.workItemQueue.DeleteIfExistsAsync();
+        }
+
+        /// <inheritdoc />
+        public async Task EnqueueMessageAsync(IQueue queue, ReceivedMessageContext context, TaskMessage taskMessage, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions)
+        {
+            var cosmosQueue = (CosmosDBQueue)queue;
+
+            Guid outboundTraceActivityId = Guid.NewGuid();
+            var data = new MessageData(taskMessage, outboundTraceActivityId, queue.Name);
+            var msg = new CosmosDBQueueMessage
+            {
+                Data = data,
+            };         
+
+            if (initialVisibilityDelay.HasValue)
+            {
+                msg.NextVisibleTime = DateTime.UtcNow.Add(initialVisibilityDelay.Value);
+            }
+
+            await cosmosQueue.Enqueue(msg);
+        }
+
+        /// <inheritdoc />
+        public IQueue GetControlQueue(string id)
+        {
+            return GetQueue(id);
+        }
+
+        /// <inheritdoc />
+        public Task<IQueue[]> GetControlQueuesAsync(int partitionCount)
+        {
+
+            var controlQueues = new IQueue[partitionCount];
+
+            for (int i = 0; i < this.settings.PartitionCount; i++)
+            {
+                var queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i));
+                controlQueues[i] = queue;
+            }
+
+            return Task.FromResult(controlQueues);
+        }
+
+        /// <inheritdoc />
+        public async Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
+        {
+            var wq = (CosmosDBQueue)queue;
+            var queueMessage = await wq.GetMessageAsync(
+                    queueVisibilityTimeout,
+                    requestOptions,
+                    operationContext,
+                    cancellationToken);
+
+            this.stats.CosmosDBRequests.Increment();
+
+            //if (queueMessage != null)
+            //{
+            //    ReceivedMessageContext context = await ReceivedMessageContext.CreateFromReceivedMessageAsync(
+            //       this.messageManager,
+            //       this.storageAccountName,
+            //       this.settings.TaskHubName,
+            //       queueMessage,
+            //       queue.Name);
+
+            //    return context;
+            //}
+
+            return null;
+        }
+
+        /// <inheritdoc />
+        public async Task<List<MessageData>> GetMessagesAsync(CancellationToken cancellationToken)
+        {
+            var messages = new List<MessageData>();
+
+            await this.ownedControlQueues.Values.ParallelForEachAsync(
+                async delegate (IQueue controlQueue)
+                {
+                    var batch = await controlQueue.GetMessagesAsync(
+                        this.settings.ControlQueueBatchSize,
+                        this.settings.ControlQueueVisibilityTimeout,
+                        ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
+                        null /* operationContext */,
+                        cancellationToken);
+
+                    this.stats.CosmosDBRequests.Increment();
+
+                    if (batch != null)
+                    {
+                        var incomingMessages = batch.Select(x => (MessageData)((CosmosDBQueueMessage)x).Data);
+
+                        lock (messages)
+                        {
+                            messages.AddRange(incomingMessages);
+                        }
+                    }
+                });
+
+            return messages;
+        }
+
+        /// <inheritdoc />
+        public async Task StartAsync()
+        {
+            await this.workItemQueue.CreateIfNotExistsAsync();
+
+            foreach (var queue in this.allControlQueues.Values)
+                await queue.CreateIfNotExistsAsync();
+        }
+    }
+}

@@ -92,5 +92,10 @@ namespace DurableTask.CosmosDB
         /// CosmosDB lease management collection name
         /// </summary>
         string CosmosDBLeaseManagementCollection { get; set; }
+
+        /// <summary>
+        /// CosmosDB name
+        /// </summary>
+        string CosmosDBName { get; set; }
     }
 }

@@ -85,5 +85,8 @@ namespace DurableTask.CosmosDB
 
         /// <inheritdoc />
         public string CosmosDBLeaseManagementCollection { get; set; }
+
+        /// <inheritdoc />
+        public string CosmosDBName { get; set; } = "durabletask";
     }
 }

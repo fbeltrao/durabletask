@@ -24,6 +24,10 @@
     <PackageReference Include="System.Configuration.ConfigurationManager">
       <Version>4.4.1</Version>
     </PackageReference>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.DocumentDB" Version="1.22.0" />
   </ItemGroup>  
 
   <ItemGroup>
