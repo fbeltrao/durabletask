@@ -19,11 +19,11 @@ namespace DurableTask.CosmosDB.Queue
         public long CreatedDate { get; set; }
 
         [JsonIgnore]
-        DateTimeOffset? IQueueMessage.NextVisibleTime => Utils.FromUnixTime(this.NextVisibleTime);
+        DateTimeOffset? IQueueMessage.NextVisibleTime => Utils.FromUnixTime(this.NextVisibleTime.Value);
 
-        public long NextVisibleTime { get; set; }
+        public long? NextVisibleTime { get; set; }
         
-        public long LockedUntil { get; set; }
+        public long? LockedUntil { get; set; }
 
         [JsonProperty("id")]
         public string Id { get; set; }

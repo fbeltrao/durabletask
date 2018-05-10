@@ -364,7 +364,6 @@ namespace DurableTask.CosmosDB.Tracking
                     case EventType.ExecutionTerminated:
                         orchestratorEventType = historyEvent.EventType;
                         ExecutionTerminatedEvent executionTerminatedEvent = (ExecutionTerminatedEvent)historyEvent;
-                        state.Input = executionTerminatedEvent.Input;
                         state.Status = OrchestrationStatus.Terminated.ToString();
                         state.OrchestrationStatus = OrchestrationStatus.Terminated;
                         state.LastUpdatedTime = historyEvent.Timestamp;

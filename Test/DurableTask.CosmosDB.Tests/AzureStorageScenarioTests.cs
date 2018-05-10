@@ -41,7 +41,6 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates a simple orchestrator function which doesn't call any activity functions.
         /// </summary>
         [TestMethod]
-        //[DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task HelloWorldOrchestration_Inline(OrchestrationBackendType orchestrationBackendType)
         {
@@ -63,7 +62,6 @@ namespace DurableTask.CosmosDB.Tests
         /// <summary>
         /// End-to-end test which runs a simple orchestrator function that calls a single activity function.
         /// </summary>
-        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         [TestMethod]
         public async Task HelloWorldOrchestration_Activity(OrchestrationBackendType orchestrationBackendType)
@@ -87,7 +85,6 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates function chaining by implementing a naive factorial function orchestration.
         /// </summary>
         [DataTestMethod]
-        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         [TestMethod]
         public async Task SequentialOrchestration(OrchestrationBackendType orchestrationBackendType)
@@ -113,7 +110,6 @@ namespace DurableTask.CosmosDB.Tests
         /// </summary>
         [TestMethod]
         [DataTestMethod]
-        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task ParallelOrchestration(OrchestrationBackendType orchestrationBackendType)
         {
@@ -137,7 +133,6 @@ namespace DurableTask.CosmosDB.Tests
         /// </summary>
         [TestMethod]
         [DataTestMethod]
-        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task ActorOrchestration(OrchestrationBackendType orchestrationBackendType)
         {
@@ -276,7 +271,6 @@ namespace DurableTask.CosmosDB.Tests
         /// </summary>
         [TestMethod]
         [DataTestMethod]
-        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task OrchestrationConcurrency(OrchestrationBackendType orchestrationBackendType)
         {
@@ -380,7 +374,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        //[DataRow(OrchestrationBackendType.Storage)]
         public async Task FanOutToTableStorage(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -414,7 +407,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task SmallTextMessagePayloads(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -451,7 +443,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task LargeTextMessagePayloads(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -488,7 +479,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task LargeBinaryByteMessagePayloads(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -519,7 +509,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task LargeBinaryStringMessagePayloads(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -549,7 +538,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task RecreateCompletedInstance(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost())
@@ -588,7 +576,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task RecreateFailedInstance(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -624,7 +611,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task RecreateTerminatedInstance(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -641,7 +627,7 @@ namespace DurableTask.CosmosDB.Tests
 
                 // Need to wait for the instance to start before we can terminate it.
                 await client.WaitForStartupAsync(TimeSpan.FromSeconds(10));
-
+                
                 await client.TerminateAsync("sayōnara");
 
                 var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
@@ -669,7 +655,6 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
         public async Task TryRecreateRunningInstance(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
