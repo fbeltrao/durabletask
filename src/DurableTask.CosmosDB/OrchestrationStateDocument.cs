@@ -21,5 +21,11 @@
         /// </summary>
         [JsonProperty("instanceId")]
         public string InstanceId { get; set; }
+
+        /// <summary>
+        /// This flag indicates that the executions are stored as attachment
+        /// </summary>
+        [JsonProperty("executionsInAttachment")]
+        public bool ExecutionsInAttachment { get;  set; }
     }
 }

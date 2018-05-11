@@ -19,8 +19,12 @@ namespace DurableTask.AzureStorage
     using Microsoft.Azure.Documents;
     using Microsoft.Azure.Documents.Client;
     using Microsoft.WindowsAzure.Storage;
+    using Newtonsoft.Json;
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
+    using System.IO;
+    using System.Text;
     using System.Threading.Tasks;
 
     static class Utils
@@ -83,7 +87,199 @@ namespace DurableTask.AzureStorage
         {
             return $"{taskHubName.ToLowerInvariant()}hub-control-{partitionIndex:00}";
         }
-    }
 
+        /// <summary>
+        /// Execute the function with retries on throttle
+        /// </summary>
+        /// <typeparam name="V"></typeparam>
+        /// <param name="function"></param>
+        /// <returns></returns>
+        internal static async Task<V> ExecuteWithRetries<V>(Func<Task<V>> function)
+        {
+            TimeSpan sleepTime = TimeSpan.Zero;
+
+            while (true)
+            {
+                try
+                {
+                    return await function();
+                }
+                catch (DocumentClientException de)
+                {
+                    if ((int)de.StatusCode != 429)
+                    {
+                        throw;
+                    }
+                    sleepTime = de.RetryAfter;
+                }
+                catch (AggregateException ae)
+                {
+                    if (!(ae.InnerException is DocumentClientException))
+                    {
+                        throw;
+                    }
+
+                    DocumentClientException de = (DocumentClientException)ae.InnerException;
+                    if ((int)de.StatusCode != 429)
+                    {
+                        throw;
+                    }
+                    sleepTime = de.RetryAfter;
+                }
+
+                await Task.Delay(sleepTime);
+            }
+        }
+
+        /// <summary>
+        /// Execute the function with retries on throttle
+        /// </summary>
+        /// <typeparam name="V"></typeparam>
+        /// <param name="function"></param>
+        /// <param name="delayIfNotFound"></param>
+        /// <param name="maxNotFoundAttempts"></param>
+        /// <returns></returns>
+        internal static async Task<V> ExecuteWithRetries<V>(Func<Task<V>> function, TimeSpan delayIfNotFound, int maxNotFoundAttempts = 1)
+        {
+            var notFoundResultCount = 0;
+            TimeSpan sleepTime = TimeSpan.Zero;
+
+            while (true)
+            {
+                try
+                {
+                    return await function();
+                }
+                catch (DocumentClientException de)
+                {
+                    if (de.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        notFoundResultCount++;
+                        if (notFoundResultCount > maxNotFoundAttempts)
+                            throw;
+
+                        sleepTime = delayIfNotFound;
+                    }
+                    else if ((int)de.StatusCode != 429)
+                    {
+                        throw;
+                    }
+                    else
+                    {
+                        sleepTime = de.RetryAfter;
+                    }
+                }
+                catch (AggregateException ae)
+                {
+                    if (!(ae.InnerException is DocumentClientException))
+                    {
+                        throw;
+                    }
+
+                    DocumentClientException de = (DocumentClientException)ae.InnerException;
+                    if ((int)de.StatusCode != 429)
+                    {
+                        throw;
+                    }
+                    sleepTime = de.RetryAfter;
+                }
+
+                await Task.Delay(sleepTime);
+            }
+        }
+
+        internal static async Task<ResourceResponse<Attachment>> SaveAttachment(DocumentClient client, Uri documentUri, object attachment, string attachmentId, RequestOptions requestOptions = null)
+        {
+            var attachmentJson = JsonConvert.SerializeObject(attachment, new JsonSerializerSettings() { TypeNameHandling = TypeNameHandling.All });
+
+            const int maxAttempts = 3;
+            var attempt = 0;
+            while (true)
+            {
+                try
+                {
+                    return await InternalSaveAttachmentAsync(client, documentUri, attachmentJson, attachmentId, requestOptions);
+                }
+                catch (Exception)
+                {
+                    attempt++;
+
+                    if (attempt >= maxAttempts)
+                        throw;
+
+                    await Task.Delay(100);
+                }
+            }   
+        }
+
+        private static async Task<ResourceResponse<Attachment>> InternalSaveAttachmentAsync(DocumentClient client, Uri documentUri, string attachmentJson, string attachmentId, RequestOptions requestOptions)
+        {
+
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(attachmentJson)))
+            {
+                var mediaOptions = new MediaOptions()
+                {
+                    ContentType = "text/plain",
+                    Slug = attachmentId
+                };
+
+                return await client.UpsertAttachmentAsync(
+                        documentUri,
+                        stream,
+                        mediaOptions,
+                        requestOptions);
+                
+            }
+        }
+
+        internal static async Task<T> LoadAttachment<T>(DocumentClient client, Uri attachmentUri, RequestOptions requestOptions = null) where T: class
+        {
+            try
+            {
+                var mediaResponse = await Utils.ExecuteWithRetries(async () => {
+                        var maxAttempts = 3;
+                        var delayTime = 500;
+#if DEBUG
+                        if (Debugger.IsAttached)
+                        {
+                            delayTime = 1000;
+                            maxAttempts = 5;
+                        }
+#endif
+
+                    var attempt = 0;
+                        ResourceResponse<Attachment> attachment = null;
+
+                        while (true)
+                        {
+                            attachment = await client.ReadAttachmentAsync(attachmentUri, requestOptions);
+                            if (attachment.Resource.MediaLink == "/media/placeholder")
+                            {
+                                attempt++;
+                                if (attempt == maxAttempts)
+                                    break;
+
+                                await Task.Delay(delayTime * attempt);
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+
+                        return await client.ReadMediaAsync(attachment.Resource.MediaLink);
+                    }, 
+                    TimeSpan.FromMilliseconds(500),
+                    4);
+                var payload = await new StreamReader(mediaResponse.Media, Encoding.UTF8).ReadToEndAsync();
+                return (T)JsonConvert.DeserializeObject(payload, new JsonSerializerSettings() { TypeNameHandling = TypeNameHandling.Objects });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                throw;
+            }
+        }
+    }
 
 }

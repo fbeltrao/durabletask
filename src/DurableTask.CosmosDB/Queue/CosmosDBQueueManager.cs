@@ -53,7 +53,7 @@ namespace DurableTask.CosmosDB.Queue
             {
                 QueueCollectionDefinition = new CosmosDBCollectionDefinition
                 {
-                    CollectionName = "queue2",
+                    CollectionName = "queue",
                     DbName = this.settings.CosmosDBName,
                     Endpoint = this.settings.CosmosDBEndpoint,
                     SecretKey = this.settings.CosmosDBAuthKey,
