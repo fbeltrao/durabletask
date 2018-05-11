@@ -230,7 +230,7 @@ namespace DurableTask.CosmosDB.Tracking
 
                 value.Executions = new Dictionary<string, OrchestrationState>();
             }
-
+            
             value.Executions.Add(executionStartedEvent.OrchestrationInstance.ExecutionId, new OrchestrationState()
             {
                 OrchestrationInstance = new OrchestrationInstance
@@ -364,7 +364,10 @@ namespace DurableTask.CosmosDB.Tracking
                     case EventType.ExecutionTerminated:
                         orchestratorEventType = historyEvent.EventType;
                         ExecutionTerminatedEvent executionTerminatedEvent = (ExecutionTerminatedEvent)historyEvent;
-                        state.Input = executionTerminatedEvent.Input;
+                        // TODO: Luis I think the property to be set is result and output
+                        // look here: durabletask\src\DurableTask.AzureStorage\Tracking\AzureTableTrackingStore.cs line 418
+                        //state.Input = executionTerminatedEvent.Input;
+                        state.Output = executionTerminatedEvent.Input;
                         state.Status = OrchestrationStatus.Terminated.ToString();
                         state.OrchestrationStatus = OrchestrationStatus.Terminated;
                         state.LastUpdatedTime = historyEvent.Timestamp;

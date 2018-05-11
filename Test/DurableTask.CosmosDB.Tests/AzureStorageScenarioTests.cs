@@ -41,7 +41,7 @@ namespace DurableTask.CosmosDB.Tests
         /// End-to-end test which validates a simple orchestrator function which doesn't call any activity functions.
         /// </summary>
         [TestMethod]
-        //[DataRow(OrchestrationBackendType.Storage)]
+        [DataRow(OrchestrationBackendType.Storage)]
         [DataRow(OrchestrationBackendType.CosmosDB)]
         public async Task HelloWorldOrchestration_Inline(OrchestrationBackendType orchestrationBackendType)
         {
@@ -178,7 +178,7 @@ namespace DurableTask.CosmosDB.Tests
                 // The end message will cause the actor to complete itself.
                 await client.RaiseEventAsync("operation", "end");
 
-                status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
+                status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(Debugger.IsAttached ? 360 : 10));
 
                 Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
                 Assert.AreEqual(3, JToken.Parse(status?.Output));
@@ -488,7 +488,7 @@ namespace DurableTask.CosmosDB.Tests
         [TestMethod]
         [DataTestMethod]
         [DataRow(OrchestrationBackendType.CosmosDB)]
-        [DataRow(OrchestrationBackendType.Storage)]
+        //[DataRow(OrchestrationBackendType.Storage)]
         public async Task LargeBinaryByteMessagePayloads(OrchestrationBackendType orchestrationBackendType)
         {
             using (TestOrchestrationHost host = TestHelpers.GetTestOrchestrationHost(orchestrationBackendType: orchestrationBackendType))
@@ -704,16 +704,16 @@ namespace DurableTask.CosmosDB.Tests
         }
 
         [TestMethod]
-        public void DeserializationArrayTest()
+        public void CosmosDBQueueMessage_DeserializationArrayTest()
         {
             var plainJson = @"[
     {
         ""$type"": ""DurableTask.CosmosDB.Queue.CosmosDBQueueMessage, DurableTask.CosmosDB"",
-        ""insertionTime"": null,
+        ""CreatedDate"": 1526025491,
         ""id"": ""7563dc12-6ba8-47be-9d9b-db70c58ebc08"",
-        ""dequeueCount"": 1,
-        ""nextVisibleTime"": null,
-        ""TimeToLive"": 0,
+        ""DequeueCount"": 1,
+        ""NextVisibleTime"": 1526025491,
+        ""LockedUntil"": 0,
         ""Data"": {
                 ""$type"": ""DurableTask.Core.TaskMessage, DurableTask.Core"",
             ""Event"": {
@@ -740,19 +740,12 @@ namespace DurableTask.CosmosDB.Tests
                 ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
             }
             },
-        ""status"": ""InProgress"",
-        ""queuedTime"": 0,
-        ""processStartTime"": 0,
-        ""completedTime"": 0,
-        ""currentWorker"": null,
-        ""workerExpires"": 0,
-        ""errors"": 0,
-        ""queueName"": ""testhub-control-00"",
+        ""Status"": ""InProgress"",
+        ""QueueName"": ""testhub-control-00"",
         ""_rid"": ""jppIAK8TKQcgAAAAAAAAAA=="",
         ""_self"": ""dbs/jppIAA==/colls/jppIAK8TKQc=/docs/jppIAK8TKQcgAAAAAAAAAA==/"",
         ""_etag"": ""\""00000000-0000-0000-e76f-b5049c6c01d3\"""",
-        ""_attachments"": ""attachments/"",
-        ""lockedUntil"": """"
+        ""_attachments"": ""attachments/""
     }
 ]
 ";
@@ -769,16 +762,16 @@ namespace DurableTask.CosmosDB.Tests
         }
 
         [TestMethod]
-        public void DeserializationSingleTest()
+        public void CosmosDBQueueMessage_DeserializationSingleTest()
         {
             var plainJson = @"
 {
     ""$type"": ""DurableTask.CosmosDB.Queue.CosmosDBQueueMessage, DurableTask.CosmosDB"",
-    ""insertionTime"": null,
+    ""CreatedDate"": 1526025491,
     ""id"": ""7563dc12-6ba8-47be-9d9b-db70c58ebc08"",
-    ""dequeueCount"": 1,
-    ""nextVisibleTime"": null,
-    ""TimeToLive"": 0,
+    ""DequeueCount"": 1,
+    ""NextVisibleTime"": 1526025491,
+    ""LockedUntil"": 0,
     ""Data"": {
         ""$type"": ""DurableTask.Core.TaskMessage, DurableTask.Core"",
         ""Event"": {
@@ -805,19 +798,12 @@ namespace DurableTask.CosmosDB.Tests
             ""ExecutionId"": ""3614754e974448edb03d89e3e4c368de""
         }
     },
-    ""status"": ""InProgress"",
-    ""queuedTime"": 0,
-    ""processStartTime"": 0,
-    ""completedTime"": 0,
-    ""currentWorker"": null,
-    ""workerExpires"": 0,
-    ""errors"": 0,
-    ""queueName"": ""testhub-control-00"",
+    ""Status"": ""InProgress"",
+    ""QueueName"": ""testhub-control-00"",
     ""_rid"": ""jppIAK8TKQcgAAAAAAAAAA=="",
     ""_self"": ""dbs/jppIAA==/colls/jppIAK8TKQc=/docs/jppIAK8TKQcgAAAAAAAAAA==/"",
     ""_etag"": ""\""00000000-0000-0000-e76f-b5049c6c01d3\"""",
-    ""_attachments"": ""attachments/"",
-    ""lockedUntil"": """"
+    ""_attachments"": ""attachments/""
 }
 ";
 
@@ -839,7 +825,7 @@ namespace DurableTask.CosmosDB.Tests
 
 
         [TestMethod]
-        public void DeserializeTaskMessage()
+        public void CosmosDBQueueMessage_DeserializeTaskMessage()
         {
             var plainJson = @"
                 {
@@ -889,7 +875,7 @@ namespace DurableTask.CosmosDB.Tests
 
 
         [TestMethod]
-        public void DeserializeExecutionStartedEvent()
+        public void CosmosDBQueueMessage_DeserializeExecutionStartedEvent()
         {
             var plainJson = @"            
                 {

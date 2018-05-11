@@ -51,7 +51,7 @@ namespace DurableTask.AzureStorage
         /// The TaskMessage.
         /// </summary>
         [DataMember]
-        public TaskMessage TaskMessage { get; private set; }
+        public TaskMessage TaskMessage { get; set; }
 
         /// <summary>
         /// The blob name for the compressed message. This value is set if there is a compressed blob.
