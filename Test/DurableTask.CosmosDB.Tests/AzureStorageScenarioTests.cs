@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-#define DISABLE_STORAGE_TESTS
+//#define DISABLE_STORAGE_TESTS
 
 namespace DurableTask.CosmosDB.Tests
 {
