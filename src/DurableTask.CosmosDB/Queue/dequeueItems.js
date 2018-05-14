@@ -1,8 +1,7 @@
 ﻿/*
     @batchSize: the amount of items to dequeue
     @visibilityStarts: visibility starting datetime
-    @timeoutStarts: when the timeout for items in process starts
-    @lockUntil: amount of time the items will be locked by
+    @lockDurationInSeconds: how long a dequeue item should be locked for
     @queueName: queue name to dequeue from
 */
 function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueName) {

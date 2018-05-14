@@ -1,12 +1,12 @@
 # Adding Cosmos DB Provider to Durable Framework
 
-This document describes the work we have done during Sync Week (+ a few days later). Participants in this project are Bindukaladeepan Chinnasamy, Francisco Beltrao, Luis Guerrero Guirado, Kanio Dimitrov, Steve Bohlen, Sarath Pinninty.
+This document describes the work we have done during Sync Week (+ a few days later). Participants in this project are Bindukaladeepan Chinnasamy, Francisco Beltrao, Luis Guerrero Guirado, Kanio Dimitrov, Steve Bohlen and Sarath Pinninty.
 
 ## The Start
 
 We started off by discussing approachs to deal with the problem. We agreed that we should work on the Durable Tasks framework and not in the Durable Functions repository. The durable framework was new to most of us, therefore we decided to start working with a clone of the DurableTask.Emulator since it is the simpliest implementation possible.
 
-After working for about 1.5 days on it, the team became more familiar with the framework. At this point we also realized that the project DurableTask.AzureStorage had many functionality that we should reproduce in our implementation (started based on the Emulator project), such as:
+After working for about 1.5 days on it, the framework became familiar to the team. At this point we also realized that the project DurableTask.AzureStorage had many functionality that we should reproduce in our implementation (started based on the Emulator project), such as:
 
 - Usage statistics
 - Scaling
@@ -16,9 +16,9 @@ The team decided that a better approach would be to profit from the existing log
 
 ## Refactoring DurableTask.AzureStorage
 
-The Durable Task Framework offers extensibility through the interfaces IOrchestrationService and IOrchestrationServiceClient. They are a high level definition of the orchestration that a implementation should provide. The DurableTask.AzureStorage.AzureStorageOrchestrationService implementation, as expected, dependents on Azure Storage.
+The Durable Task Framework offers extensibility through the interfaces IOrchestrationService and IOrchestrationServiceClient. Those are a high level definition of an orchestrator that a implementation should provide. The DurableTask.AzureStorage.AzureStorageOrchestrationService implementation, as expected, dependents on Azure Storage.
 
-Our first step was to extract the generic from the azure storage implementation out of the AzureStorageOrchestrationService. We decided to copy the project and unit tests renaming it to "CosmosDB" (DurableTask.AzureStorage and DurableTask.AzureStorage.Tests). Next, we added abstractions where needed to remove the dependency in AzureStorageOrchestrationService of any azure storage class, renaming it to ExtensibleOrchestrationService.
+Our first step was to extract the storage specific code from AzureStorageOrchestrationService by introducing abstractions. To accomplish that we copied the projects DurableTask.AzureStorage and DurableTask.AzureStorage.Tests renaming them with "CosmosDB". Next, we added interfaces to the dependency on azure storage classes, renaming the class to ExtensibleOrchestrationService.
 
 The following abstractions were used:
 
@@ -35,7 +35,7 @@ The following abstractions were used:
 
 The usage of the IQueueManager or IQueue are based on polling. The orchestration service will, on a interval basis, ask for pending messages. After processing them they will be either completed or abandoned based on the execution success.
 
-The CosmosDB implementation creates an envelope for queue items that indicates the queue they belong to, current status and visibility. A stored procedure will dequeue items based on the creation time, making an atomic update to prevent items to be dequeued multiple times.
+The CosmosDB implementation creates an envelope for queue items that indicates the queue they belong to, current status and visibility. A stored procedure will dequeue items based on the creation time, making an atomic update to prevent items from being dequeued multiple times.
 
 ```json
 {
@@ -81,6 +81,80 @@ The CosmosDB implementation creates an envelope for queue items that indicates t
 }
 ```
 
+Dequeing Stored Procedure (simple version)
+```javascript
+/*
+    @batchSize: the amount of items to dequeue
+    @visibilityStarts: visibility starting datetime
+    @lockDurationInSeconds: how long a dequeue item should be locked for
+    @queueName: queue name to dequeue from
+*/
+function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueName) {
+    var collection = getContext().getCollection();
+
+    var currentDate = Math.floor(new Date() / 1000);
+    var dequeuedItemLockUntil = currentDate + lockDurationInSeconds;
+    var searchItemsLockUntil = Math.floor(currentDate + (lockDurationInSeconds / 2));
+    var itemsToReturn = [];
+    var foundItemsCount = 0;
+    var processedItemsCount = 0;
+
+    var query = {
+        query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextVisibleTime <= @visibilityStarts AND c.QueueName = @queueName AND ((c.Status = "Pending") OR (c.Status="InProgress" AND c.LockedUntil > @searchItemsLockUntil)) ORDER by c.NextVisibleTime',
+        parameters: [
+            { name: "@queueName", value: queueName },
+            { name: "@visibilityStarts", value: visibilityStarts },
+            { name: '@searchItemsLockUntil', value: searchItemsLockUntil }]
+    };
+
+    collection.queryDocuments(
+        collection.getSelfLink(),
+        query,
+        function (err, feed, options) {
+            if (err) throw err;
+
+            if (!feed || !feed.length) {
+                var response = getContext().getResponse();
+                response.setBody('[]');
+                return response;
+            }
+
+            foundItemsCount = feed.length;
+
+            updateDocument(feed, 0);
+
+        }
+    );
+
+    function updateDocument(docs, index) {
+        var doc = docs[index];
+        doc.Status = 'InProgress';
+        doc.DequeueCount = doc.DequeueCount + 1;
+        doc.LockedUntil = dequeuedItemLockUntil;
+
+        collection.replaceDocument(
+            doc._self,
+            doc,
+            function (err, docReplaced) {
+                if (!err) {
+                    itemsToReturn.push(docReplaced);
+                }
+
+                ++processedItemsCount;
+
+                if (processedItemsCount == foundItemsCount) {
+                    var response = getContext().getResponse();
+                    response.setBody(JSON.stringify(itemsToReturn));
+                } else {
+                    updateDocument(docs, index + 1);
+                }
+            }
+        );
+    }
+}
+
+```
+
 ### Lease management in Cosmos DB
 
 Lease management in Durable Tasks Framework is used to identity which node/host is responsible for a control queue (by default 4). The implementation is Cosmos creates 1 document for each lease. Using conditional updates (by ETag) we identify which host has control over it.
@@ -99,7 +173,7 @@ Lease management in Durable Tasks Framework is used to identity which node/host 
 
 ### Validating the implementation
 
-To verify that our code refactory and new implementations work as intended we use the existing unit tests. We made a few changes so that the tests methods can be executed twice, once each provider:
+To verify that our code refactory and new implementations work as intended we use the existing unit tests. We made a few changes so that the tests methods can be executed twice, once for each provider:
 
 ```c#
         /// <summary>
@@ -128,7 +202,7 @@ To verify that our code refactory and new implementations work as intended we us
         }
 ```
 
-We realized that unit tests don't always work (for both Storage and Cosmos). The problem seems to be related to parallelism and the emulated Storage and Cosmos. Usually running the faulty tests cases one by one solves the problem.
+We realized that unit tests don't work always (for both Storage and Cosmos). The problem seems to be related to parallelism and the emulated Storage and Cosmos. Running the faulty tests cases individually usually solves the problem.
 
 ![Unit test results](unit_tests.png)
 
