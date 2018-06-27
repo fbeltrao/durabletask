@@ -119,10 +119,11 @@ namespace DurableTask.AzureStorage.Monitoring
             catch (StorageException e) when (e.RequestInformation?.HttpStatusCode == 404)
             {
                 // The queues are not yet provisioned.
-                AnalyticsEventSource.Log.MonitorWarning(
+                AnalyticsEventSource.Log.GeneralWarning(
                     this.storageAccount.Credentials.AccountName,
                     this.taskHub,
-                    $"Task hub has not been provisioned: {e.RequestInformation.ExtendedErrorInformation?.ErrorMessage}");
+                    $"Task hub has not been provisioned: {e.RequestInformation.ExtendedErrorInformation?.ErrorMessage}",
+                    Utils.ExtensionVersion);
                 return false;
             }
 

@@ -17,18 +17,23 @@ namespace DurableTask.ServiceBus.Common
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.IO;
+    using System.Runtime.ExceptionServices;
     using System.Threading.Tasks;
     using DurableTask.Core;
     using DurableTask.Core.Common;
+    using DurableTask.Core.History;
     using DurableTask.Core.Settings;
     using DurableTask.Core.Tracing;
     using DurableTask.Core.Tracking;
     using DurableTask.ServiceBus.Settings;
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
+    using Newtonsoft.Json;
 
     internal static class ServiceBusUtils
     {
+        static TimeSpan TokenTimeToLive = TimeSpan.FromDays(30);
+
         public static Task<BrokeredMessage> GetBrokeredMessageFromObjectAsync(object serializableObject, CompressionSettings compressionSettings)
         {
             return GetBrokeredMessageFromObjectAsync(serializableObject, compressionSettings, new ServiceBusMessageSettings(), null, null, null, DateTimeUtils.MinDateTime);
@@ -204,7 +209,7 @@ namespace DurableTask.ServiceBus.Common
 
                     using (Stream objectStream = await Utils.GetDecompressedStreamAsync(compressedStream))
                     {
-                        deserializedObject = Utils.ReadObjectFromStream<T>(objectStream);
+                        deserializedObject = SafeReadFromStream<T>(objectStream);
                     }
                 }
             }
@@ -213,7 +218,7 @@ namespace DurableTask.ServiceBus.Common
             {
                 using (var rawStream = await LoadMessageStreamAsync(message, orchestrationServiceBlobStore))
                 {
-                    deserializedObject = Utils.ReadObjectFromStream<T>(rawStream);
+                    deserializedObject = SafeReadFromStream<T>(rawStream);
                 }
             }
             else
@@ -224,6 +229,37 @@ namespace DurableTask.ServiceBus.Common
             }
 
             return deserializedObject;
+        }
+
+        static T SafeReadFromStream<T>(Stream objectStream)
+        {
+            byte[] serializedBytes = Utils.ReadBytesFromStream(objectStream);
+            try
+            {
+                return Utils.ReadObjectFromByteArray<T>(serializedBytes);
+            }
+            catch (JsonSerializationException jex) when (typeof(T) == typeof(TaskMessage))
+            {
+                //If deserialization to TaskMessage fails attempt to deserialize to the now deprecated StateMessage type
+#pragma warning disable 618
+                var originalException = ExceptionDispatchInfo.Capture(jex);
+                StateMessage stateMessage = null;
+                try
+                {
+                    stateMessage = Utils.ReadObjectFromByteArray<StateMessage>(serializedBytes);
+                }
+                catch (JsonSerializationException)
+                {
+                    originalException.Throw();
+                }
+
+                return (dynamic)new TaskMessage
+                {
+                    Event = new HistoryStateEvent(-1, stateMessage.State),
+                    OrchestrationInstance = stateMessage.State.OrchestrationInstance
+                };
+#pragma warning restore 618
+            }
         }
 
         static Task<Stream> LoadMessageStreamAsync(BrokeredMessage message, IOrchestrationServiceBlobStore orchestrationServiceBlobStore)
@@ -312,6 +348,70 @@ namespace DurableTask.ServiceBus.Common
                 factory.Address);
 
             return factory;
+        }
+
+        public static MessagingFactory CreateSenderMessagingFactory(
+            NamespaceManager namespaceManager, ServiceBusConnectionStringBuilder sbConnectionStringBuilder, string entityPath, ServiceBusMessageSenderSettings messageSenderSettings)
+        {
+            MessagingFactory messagingFactory = MessagingFactory.Create(
+                namespaceManager.Address.ToString(),
+                new MessagingFactorySettings
+                {
+                    TransportType = TransportType.NetMessaging,
+                    TokenProvider = TokenProvider.CreateSharedAccessSignatureTokenProvider(
+                        sbConnectionStringBuilder.SharedAccessKeyName, 
+                        sbConnectionStringBuilder.SharedAccessKey, 
+                        TokenTimeToLive),
+                    NetMessagingTransportSettings = new NetMessagingTransportSettings()
+                    {
+                        BatchFlushInterval = TimeSpan.FromMilliseconds(messageSenderSettings.BatchFlushIntervalInMilliSecs)
+                    }
+                });
+
+            TraceHelper.Trace(
+                TraceEventType.Information,
+                "CreateSenderMessagingFactory",
+                "Initialized messaging factory with address {0}",
+                messagingFactory.Address);
+
+            return messagingFactory;
+        }
+
+        public static MessagingFactory CreateReceiverMessagingFactory(NamespaceManager namespaceManager, ServiceBusConnectionStringBuilder sbConnectionStringBuilder, string entityPath)
+        {
+            MessagingFactory messagingFactory = MessagingFactory.Create(
+                namespaceManager.Address.ToString(),
+                new MessagingFactorySettings
+                {
+                    TransportType = TransportType.NetMessaging,
+                    TokenProvider = TokenProvider.CreateSharedAccessSignatureTokenProvider(
+                        sbConnectionStringBuilder.SharedAccessKeyName, 
+                        sbConnectionStringBuilder.SharedAccessKey, 
+                        TokenTimeToLive)
+                });
+
+            TraceHelper.Trace(
+                TraceEventType.Information,
+                "CreateReceiverMessagingFactory",
+                "Initialized messaging factory with address {0}",
+                messagingFactory.Address);
+
+            return messagingFactory;
+        }
+
+        public static MessageSender CreateMessageSender(MessagingFactory senderFactory, string transferDestinationEntityPath, string viaEntityPath)
+        {
+            return senderFactory.CreateMessageSender(transferDestinationEntityPath, viaEntityPath);
+        }
+
+        public static MessageSender CreateMessageSender(MessagingFactory senderFactory, string entityPath)
+        {
+            return senderFactory.CreateMessageSender(entityPath);
+        }
+
+        public static QueueClient CreateQueueClient(MessagingFactory queueClientFactory, string entityPath)
+        {
+            return queueClientFactory.CreateQueueClient(entityPath);
         }
     }
 }
