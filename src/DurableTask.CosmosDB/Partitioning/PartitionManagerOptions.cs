@@ -38,7 +38,7 @@ namespace DurableTask.CosmosDB.Partitioning
         public TimeSpan LeaseInterval { get; set; } = TimeSpan.FromSeconds(30);
 
         /// <summary>
-        /// Maximum number of receiver clients created for each host instance. Once the max is reached host will start rebalancing partitions 
+        /// Maximum number of receiver clients created for each host instance. Once the max is reached host will start re-balancing partitions 
         /// among receiver clients already created.
         /// </summary>
         public int MaxReceiveClients { get; set; } = 4;
@@ -57,12 +57,6 @@ namespace DurableTask.CosmosDB.Partitioning
         ///     c) DefaultLeaseInterval = 30 seconds
         ///     d) MaxReceiveClients = 16,
         /// </summary>
-        public static PartitionManagerOptions DefaultOptions
-        {
-            get
-            {
-                return new PartitionManagerOptions();
-            }
-        }
+        public static PartitionManagerOptions DefaultOptions => new PartitionManagerOptions();
     }
 }

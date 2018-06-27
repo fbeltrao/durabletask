@@ -392,7 +392,7 @@ namespace DurableTask.CosmosDB.Partitioning
         {
             if (await this.taskHubInfoBlob.ExistsAsync())
             {
-                await taskHubInfoBlob.FetchAttributesAsync();
+                await this.taskHubInfoBlob.FetchAttributesAsync();
                 this.stats.StorageRequests.Increment();
                 string serializedEventHubInfo = await this.taskHubInfoBlob.DownloadTextAsync();
                 this.stats.StorageRequests.Increment();
@@ -440,7 +440,7 @@ namespace DurableTask.CosmosDB.Partitioning
             TimeSpan renewalInterval,
             AzureStorageOrchestrationServiceStats stats)
         {
-            var account = CloudStorageAccount.Parse(storageConnectionString);
+            CloudStorageAccount account = CloudStorageAccount.Parse(storageConnectionString);
             return GetBlobLeaseManager(taskHub, workerName, account, leaseInterval, renewalInterval, stats);
         }
 

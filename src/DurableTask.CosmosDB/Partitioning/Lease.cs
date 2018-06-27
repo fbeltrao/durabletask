@@ -68,13 +68,8 @@ namespace DurableTask.CosmosDB.Partitioning
                 return true;
             }
 
-            Lease lease = obj as Lease;
-            if (lease == null)
-            {
-                return false;
-            }
-
-            return string.Equals(this.PartitionId, lease.PartitionId);
+            var lease = obj as Lease;
+            return lease != null && string.Equals(this.PartitionId, lease.PartitionId);
         }
 
         /// <summary>Returns the hash code of the current instance.</summary>

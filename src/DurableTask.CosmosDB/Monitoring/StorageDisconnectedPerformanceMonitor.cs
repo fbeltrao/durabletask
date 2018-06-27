@@ -30,20 +30,15 @@ namespace DurableTask.CosmosDB.Monitoring
 
         static readonly int MaxPollingLatency = (int)ExtensibleOrchestrationService.MaxQueuePollingDelay.TotalMilliseconds;
         static readonly int HighLatencyThreshold = Math.Min(MaxPollingLatency, 1000); // milliseconds
-        static readonly int LowLatencyThreshold = 200; // milliseconds
+        const int LowLatencyThreshold = 200; // milliseconds
         static readonly Random Random = new Random();
-
-        readonly List<QueueMetricHistory> controlQueueLatencies = new List<QueueMetricHistory>();
-        readonly QueueMetricHistory workItemQueueLatencies = new QueueMetricHistory(QueueLengthSampleSize);
-
-        //readonly CloudStorageAccount storageAccount;
         readonly string taskHub;
 
         int currentPartitionCount;
         int currentWorkItemQueueLength;
         int[] currentControlQueueLengths;
 
-        ExtensibleOrchestrationService service;
+        readonly ExtensibleOrchestrationService service;
 
         /// <summary>
         /// 
@@ -59,9 +54,8 @@ namespace DurableTask.CosmosDB.Monitoring
 
         internal virtual int PartitionCount => this.currentPartitionCount;
 
-        internal List<QueueMetricHistory> ControlQueueLatencies => this.controlQueueLatencies;
-
-        internal QueueMetricHistory WorkItemQueueLatencies => this.workItemQueueLatencies;
+        internal List<QueueMetricHistory> ControlQueueLatencies { get; } = new List<QueueMetricHistory>();
+        internal QueueMetricHistory WorkItemQueueLatencies { get; } = new QueueMetricHistory(QueueLengthSampleSize);
 
         /// <summary>
         /// Collects and returns a sampling of all performance metrics being observed by this instance.

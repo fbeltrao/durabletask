@@ -54,8 +54,9 @@ namespace DurableTask.CosmosDB.Partitioning
         public async Task InitializeAsync()
         {
             var leases = new List<T>();
-            foreach (T lease in await this.leaseManager.ListLeasesAsync())
+            foreach (Lease lease1 in await this.leaseManager.ListLeasesAsync())
             {
+                var lease = (T)lease1;
                 if (string.Compare(lease.Owner, this.workerName, StringComparison.OrdinalIgnoreCase) == 0)
                 {
                     bool renewed = await this.RenewLeaseAsync(lease);
@@ -125,8 +126,7 @@ namespace DurableTask.CosmosDB.Partitioning
 
         public async Task TryReleasePartitionAsync(string partitionId, string leaseToken)
         {
-            T lease;
-            if (this.currentlyOwnedShards.TryGetValue(partitionId, out lease) &&
+            if (this.currentlyOwnedShards.TryGetValue(partitionId, out T lease) &&
                 lease.Token.Equals(leaseToken, StringComparison.OrdinalIgnoreCase))
             {
                 await this.RemoveLeaseAsync(lease, true);
@@ -137,7 +137,7 @@ namespace DurableTask.CosmosDB.Partitioning
         {
             AnalyticsEventSource.Log.PartitionManagerInfo(this.accountName, this.taskHub, this.workerName, $"Starting background renewal of leases with interval: {this.options.RenewInterval}.");
 
-            while (this.isStarted == 1 || !shutdownComplete)
+            while (this.isStarted == 1 || !this.shutdownComplete)
             {
                 try
                 {
@@ -209,10 +209,10 @@ namespace DurableTask.CosmosDB.Partitioning
             {
                 try
                 {
-                    var availableLeases = await this.TakeLeasesAsync();
+                    IDictionary<string, T> availableLeases = await this.TakeLeasesAsync();
 
                     var addLeaseTasks = new List<Task>();
-                    foreach (var kvp in availableLeases)
+                    foreach (KeyValuePair<string, T> kvp in availableLeases)
                     {
                         addLeaseTasks.Add(this.AddLeaseAsync(kvp.Value));
                     }
@@ -308,7 +308,7 @@ namespace DurableTask.CosmosDB.Partitioning
                     else
                     {
                         KeyValuePair<string, int> workerToStealFrom = default(KeyValuePair<string, int>);
-                        foreach (var kvp in workerToShardCount)
+                        foreach (KeyValuePair<string, int> kvp in workerToShardCount)
                         {
                             if (kvp.Equals(default(KeyValuePair<string, int>)) || workerToStealFrom.Value < kvp.Value)
                             {
@@ -318,7 +318,7 @@ namespace DurableTask.CosmosDB.Partitioning
 
                         if (workerToStealFrom.Value > target - (moreShardsNeeded > 1 ? 1 : 0))
                         {
-                            foreach (var kvp in allShards)
+                            foreach (KeyValuePair<string, T> kvp in allShards)
                             {
                                 if (string.Equals(kvp.Value.Owner, workerToStealFrom.Key, StringComparison.OrdinalIgnoreCase))
                                 {
@@ -347,10 +347,7 @@ namespace DurableTask.CosmosDB.Partitioning
 
         async Task ShutdownAsync()
         {
-            var shutdownTasks = this.currentlyOwnedShards.Values.Select<T, Task>((lease) =>
-            {
-                return RemoveLeaseAsync(lease, true);
-            });
+            IEnumerable<Task> shutdownTasks = this.currentlyOwnedShards.Values.Select<T, Task>((lease) => this.RemoveLeaseAsync(lease, true));
 
             await Task.WhenAll(shutdownTasks);
         }
@@ -566,7 +563,7 @@ namespace DurableTask.CosmosDB.Partitioning
 
             public async Task NotifyShardAcquiredAsync(T lease)
             {
-                foreach (var observer in this.observers)
+                foreach (IPartitionObserver observer in this.observers)
                 {
                     await observer.OnPartitionAcquiredAsync(lease);
                 }
@@ -574,7 +571,7 @@ namespace DurableTask.CosmosDB.Partitioning
 
             public async Task NotifyShardReleasedAsync(T lease, CloseReason reason)
             {
-                foreach (var observer in this.observers)
+                foreach (IPartitionObserver observer in this.observers)
                 {
                     await observer.OnPartitionReleasedAsync(lease, reason);
                 }
@@ -583,19 +580,19 @@ namespace DurableTask.CosmosDB.Partitioning
 
         sealed class Unsubscriber : IDisposable
         {
-            readonly List<IPartitionObserver> _observers;
-            readonly IPartitionObserver _observer;
+            readonly List<IPartitionObserver> observers;
+            readonly IPartitionObserver observer;
 
             internal Unsubscriber(List<IPartitionObserver> observers, IPartitionObserver observer)
             {
-                this._observers = observers;
-                this._observer = observer;
+                this.observers = observers;
+                this.observer = observer;
             }
 
             public void Dispose()
             {
-                if (_observers.Contains(_observer))
-                    _observers.Remove(_observer);
+                if (this.observers.Contains(this.observer))
+                    this.observers.Remove(this.observer);
             }
         }
     }

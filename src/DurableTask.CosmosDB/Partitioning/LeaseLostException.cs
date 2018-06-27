@@ -82,7 +82,7 @@ namespace DurableTask.CosmosDB.Partitioning
         {
             base.GetObjectData(info, context);
 
-            if (Lease != null)
+            if (this.Lease != null)
             {
                 info.AddValue("Lease", this.Lease);
             }

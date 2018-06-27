@@ -45,8 +45,8 @@ namespace DurableTask.CosmosDB.Partitioning
         [JsonProperty("id")]
         public string Id
         {
-            get { return this.PartitionId; }
-            set { this.PartitionId = value; }
+            get => this.PartitionId;
+            set => this.PartitionId = value;
         }
 
         /// <summary>
@@ -63,7 +63,7 @@ namespace DurableTask.CosmosDB.Partitioning
         /// <inheritdoc />
         public override bool IsExpired()
         {
-            var now = Utils.ToUnixTime(DateTime.UtcNow);
+            long now = Utils.ToUnixTime(DateTime.UtcNow);
             return this.LeaseTimeout < now;
         }
     }

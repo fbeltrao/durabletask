@@ -23,8 +23,6 @@ namespace DurableTask.CosmosDB.Monitoring
         readonly int[] history;
         int next;
         int count;
-        int latestValue;
-        int previousValue;
         double? currentTrend;
 
         public QueueMetricHistory(int maxSize)
@@ -37,9 +35,9 @@ namespace DurableTask.CosmosDB.Monitoring
             get { return this.count == this.history.Length; }
         }
 
-        public int Latest => this.latestValue;
+        public int Latest { get; private set; }
 
-        public int Previous => this.previousValue;
+        public int Previous { get; private set; }
 
         public bool IsTrendingUpwards => this.CurrentTrend > TrendThreshold;
 
@@ -93,8 +91,8 @@ namespace DurableTask.CosmosDB.Monitoring
                 this.next = 0;
             }
 
-            this.previousValue = this.latestValue;
-            this.latestValue = value;
+            this.Previous = this.Latest;
+            this.Latest = value;
 
             // invalidate any existing trend information
             this.currentTrend = null;
