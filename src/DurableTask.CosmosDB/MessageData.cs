@@ -11,13 +11,12 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.CosmosDB
 {
     using System;
     using System.Runtime.Serialization;
     using DurableTask.Core;
     using DurableTask.CosmosDB.Queue;
-    using Microsoft.WindowsAzure.Storage.Queue;
 
     /// <summary>
     /// Protocol class for all Azure Queue messages.

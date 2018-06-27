@@ -1,4 +1,6 @@
-﻿//using DurableTask.AzureStorage;
+﻿// Shall we keep this code here? I guess it is work in progress.
+
+//using DurableTask.AzureStorage;
 //using Newtonsoft.Json;
 //using Newtonsoft.Json.Converters;
 //using System;

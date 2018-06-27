@@ -11,28 +11,24 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.CosmosDB
 {
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Linq;
-    using System.Net;
     using System.Runtime.ExceptionServices;
     using System.Threading;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage.Monitoring;
-    using DurableTask.AzureStorage.Partitioning;
+    using DurableTask.CosmosDB.Partitioning;
     using DurableTask.Core;
     using DurableTask.Core.History;
-    using DurableTask.CosmosDB;
+    using DurableTask.CosmosDB.Monitoring;
     using DurableTask.CosmosDB.Queue;
     using DurableTask.CosmosDB.Tracking;
     using Microsoft.WindowsAzure.Storage;
-    using Microsoft.WindowsAzure.Storage.Blob;
     using Microsoft.WindowsAzure.Storage.Queue;
-    using Microsoft.WindowsAzure.Storage.Table;
     using Newtonsoft.Json;
 
     /// <summary>
@@ -47,9 +43,9 @@ namespace DurableTask.AzureStorage
 
         static readonly HistoryEvent[] EmptyHistoryEventList = new HistoryEvent[0];
 
-        readonly internal IExtensibleOrchestrationServiceSettings settings;
+        internal readonly IExtensibleOrchestrationServiceSettings settings;
         readonly AzureStorageOrchestrationServiceStats stats;
-        readonly internal IQueueManager queueManager;
+        internal readonly IQueueManager queueManager;
 
         readonly LinkedList<PendingMessageBatch> pendingOrchestrationMessageBatches;
         readonly ConcurrentDictionary<string, object> activeOrchestrationInstances;

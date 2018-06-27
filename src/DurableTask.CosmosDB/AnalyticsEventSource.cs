@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.CosmosDB
 {
     using System;
     using System.Diagnostics.Tracing;

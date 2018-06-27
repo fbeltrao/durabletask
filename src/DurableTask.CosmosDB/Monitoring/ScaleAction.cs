@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Monitoring
+namespace DurableTask.CosmosDB.Monitoring
 {
     /// <summary>
     /// Possible scale actions for durable task hub.

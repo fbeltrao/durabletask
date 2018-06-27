@@ -11,18 +11,12 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-using DurableTask.AzureStorage;
-using DurableTask.AzureStorage.Monitoring;
 using DurableTask.Core;
 using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Blob;
 using Microsoft.WindowsAzure.Storage.Queue;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 

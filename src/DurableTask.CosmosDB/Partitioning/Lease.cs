@@ -11,20 +11,20 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Partitioning
+namespace DurableTask.CosmosDB.Partitioning
 {
     /// <summary>Contains partition ownership information.</summary>
     class Lease
     {
-        /// <summary>Initializes a new instance of the <see cref="DurableTask.AzureStorage.Partitioning.Lease" /> class.</summary>
+        /// <summary>Initializes a new instance of the <see cref="DurableTask.CosmosDB.Partitioning.Lease" /> class.</summary>
         public Lease()
         {
         }
 
         /// <summary>Initializes a new instance of the 
-        /// <see cref="DurableTask.AzureStorage.Partitioning.Lease" /> class with the specified 
-        /// <see cref="DurableTask.AzureStorage.Partitioning.Lease(DurableTask.AzureStorage.Partitioning.Lease)" /> value as reference.</summary> 
-        /// <param name="source">The specified <see cref="DurableTask.AzureStorage.Partitioning.Lease(DurableTask.AzureStorage.Partitioning.Lease)" /> instance where its property values will be copied from.</param>
+        /// <see cref="DurableTask.CosmosDB.Partitioning.Lease" /> class with the specified 
+        /// <see cref="DurableTask.CosmosDB.Partitioning.Lease(DurableTask.CosmosDB.Partitioning.Lease)" /> value as reference.</summary> 
+        /// <param name="source">The specified <see cref="DurableTask.CosmosDB.Partitioning.Lease(DurableTask.CosmosDB.Partitioning.Lease)" /> instance where its property values will be copied from.</param>
         public Lease(Lease source)
         {
             this.PartitionId = source.PartitionId;
@@ -42,7 +42,7 @@ namespace DurableTask.AzureStorage.Partitioning
         public string Owner { get; set; }
 
         /// <summary>Gets or sets the lease token that manages concurrency between hosts. You can use this token to guarantee single access to any resource needed by the 
-        /// <see cref="DurableTask.AzureStorage.ExtensibleOrchestrationService" /> object.</summary> 
+        /// <see cref="DurableTask.CosmosDB.ExtensibleOrchestrationService" /> object.</summary> 
         /// <value>The lease token.</value>
         public string Token { get; set; }
 

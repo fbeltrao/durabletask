@@ -14,7 +14,6 @@
 namespace DurableTask.CosmosDB.Monitoring
 {
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage.Monitoring;
 
     /// <summary>
     /// Disconnected Performance Monitory

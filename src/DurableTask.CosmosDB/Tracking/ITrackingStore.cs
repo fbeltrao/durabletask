@@ -27,7 +27,7 @@ namespace DurableTask.CosmosDB.Tracking
     interface ITrackingStore
     {
         /// <summary>
-        /// Create Tracking Store Resources if they dont already exist
+        /// Create Tracking Store Resources if they don't already exist
         /// </summary>
         /// <returns></returns>
         Task CreateAsync();

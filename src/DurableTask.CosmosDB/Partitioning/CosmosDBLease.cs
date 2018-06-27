@@ -11,12 +11,11 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-using DurableTask.AzureStorage.Partitioning;
-using Newtonsoft.Json;
-using System;
-
-namespace DurableTask.AzureStorage
+namespace DurableTask.CosmosDB.Partitioning
 {
+    using System;
+    using Newtonsoft.Json;
+
     /// <summary>
     /// CosmosDB lease
     /// </summary>

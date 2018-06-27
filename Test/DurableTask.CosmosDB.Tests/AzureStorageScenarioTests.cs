@@ -24,7 +24,7 @@ namespace DurableTask.CosmosDB.Tests
     using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage;
+    using DurableTask.CosmosDB;
     using DurableTask.Core;
     using DurableTask.Core.Exceptions;
     using DurableTask.Core.History;

@@ -14,7 +14,6 @@
 namespace DurableTask.CosmosDB
 {
     using System;
-    using DurableTask.AzureStorage;
     using Microsoft.WindowsAzure.Storage.Queue;
     using Microsoft.WindowsAzure.Storage.Table;
 
@@ -66,7 +65,7 @@ namespace DurableTask.CosmosDB
         public string WorkerId { get; set; } = Environment.MachineName;
 
         /// <inheritdoc />
-        public int PartitionCount { get; set; } = AzureStorage.Utils.DefaultPartitionCount;
+        public int PartitionCount { get; set; } = Utils.DefaultPartitionCount;
 
         /// <inheritdoc />
         public TimeSpan LeaseRenewInterval { get; set; } = TimeSpan.FromSeconds(10);

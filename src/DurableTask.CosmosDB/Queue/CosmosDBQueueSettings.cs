@@ -11,8 +11,10 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.CosmosDB
+namespace DurableTask.CosmosDB.Queue
 {
+    using DurableTask.CosmosDB.Collection;
+
     /// <summary>
     /// 
     /// </summary>

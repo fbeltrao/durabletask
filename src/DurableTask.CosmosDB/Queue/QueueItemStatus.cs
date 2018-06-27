@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.CosmosDB
+namespace DurableTask.CosmosDB.Queue
 {
     /// <summary>
     /// Queue item status

@@ -15,17 +15,18 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DurableTask.AzureStorage;
-using DurableTask.AzureStorage.Monitoring;
+using DurableTask.CosmosDB;
+using DurableTask.CosmosDB.Monitoring;
 using DurableTask.Core;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 
 namespace DurableTask.CosmosDB.Queue
 {
+    using DurableTask.CosmosDB.Collection;
+
     /// <summary>
     /// Queue manager based on CosmosDB
     /// </summary>
@@ -183,7 +184,7 @@ namespace DurableTask.CosmosDB.Queue
                     operationContext,
                     cancellationToken));
 
-            this.stats.CosmosDBRequests.Increment();
+            this.stats.CosmosDbRequests.Increment();
 
             if (queueMessage != null)
             {
@@ -211,7 +212,7 @@ namespace DurableTask.CosmosDB.Queue
                         null /* operationContext */,
                         cancellationToken);
 
-                    this.stats.CosmosDBRequests.Increment();
+                    this.stats.CosmosDbRequests.Increment();
 
                     if (batch != null)
                     {

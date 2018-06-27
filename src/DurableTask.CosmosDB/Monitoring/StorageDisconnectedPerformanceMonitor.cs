@@ -11,16 +11,14 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Monitoring
+namespace DurableTask.CosmosDB.Monitoring
 {
     using System;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading.Tasks;
-    using DurableTask.CosmosDB.Monitoring;
     using DurableTask.CosmosDB.Queue;
     using Microsoft.WindowsAzure.Storage;
-    using Microsoft.WindowsAzure.Storage.Queue;
 
     /// <summary>
     /// Utility class for collecting performance information for a Durable Task hub without actually running inside a Durable Task worker.
@@ -97,7 +95,7 @@ namespace DurableTask.AzureStorage.Monitoring
             var workItemQueue = service.WorkItemQueue;
             
             
-            var controlQueues = await service.queueManager.GetControlQueuesAsync(partitionCount: AzureStorage.Utils.DefaultPartitionCount);
+            var controlQueues = await service.queueManager.GetControlQueuesAsync(partitionCount: Utils.DefaultPartitionCount);
 
             Task<QueueMetric> workItemMetricTask = GetQueueMetricsAsync(workItemQueue);
             List<Task<QueueMetric>> controlQueueMetricTasks = controlQueues.Select(GetQueueMetricsAsync).ToList();
@@ -227,7 +225,7 @@ namespace DurableTask.AzureStorage.Monitoring
         protected virtual async Task<ControlQueueData> GetAggregateControlQueueLengthAsync()
         {
             var controlQueues = await service.queueManager.GetControlQueuesAsync(
-                partitionCount: AzureStorage.Utils.DefaultPartitionCount);
+                partitionCount: Utils.DefaultPartitionCount);
 
             // There is one queue per partition.
             var result = new ControlQueueData();

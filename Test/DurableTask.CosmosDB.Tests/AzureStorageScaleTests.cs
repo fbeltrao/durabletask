@@ -20,11 +20,10 @@ namespace DurableTask.CosmosDB.Tests
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage;
-    using DurableTask.AzureStorage.Monitoring;
-    using DurableTask.AzureStorage.Partitioning;
-    using DurableTask.Core;
+    using DurableTask.CosmosDB;
     using DurableTask.CosmosDB.Monitoring;
+    using DurableTask.CosmosDB.Partitioning;
+    using DurableTask.Core;
     using DurableTask.CosmosDB.Tracking;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using Microsoft.WindowsAzure.Storage;

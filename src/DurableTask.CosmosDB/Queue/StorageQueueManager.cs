@@ -11,9 +11,9 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-using DurableTask.AzureStorage;
-using DurableTask.AzureStorage.Monitoring;
-using DurableTask.AzureStorage.Partitioning;
+
+using DurableTask.CosmosDB.Monitoring;
+using DurableTask.CosmosDB.Partitioning;
 using DurableTask.Core;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;

@@ -16,7 +16,7 @@ namespace DurableTask.CosmosDB.Tests
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage;
+    using DurableTask.CosmosDB;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
 
     [TestClass]

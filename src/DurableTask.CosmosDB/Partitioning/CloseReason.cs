@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Partitioning
+namespace DurableTask.CosmosDB.Partitioning
 {
     /// <summary>Enumerates the reason for closing of session.</summary>
     enum CloseReason

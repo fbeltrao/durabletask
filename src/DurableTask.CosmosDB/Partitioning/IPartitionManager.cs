@@ -14,7 +14,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace DurableTask.AzureStorage.Partitioning
+namespace DurableTask.CosmosDB.Partitioning
 {
     interface IPartitionManager
     {

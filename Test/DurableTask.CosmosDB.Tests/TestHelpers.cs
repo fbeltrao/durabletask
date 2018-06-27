@@ -11,13 +11,8 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-using DurableTask.AzureStorage;
 using System;
-using System.Collections.Generic;
 using System.Configuration;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace DurableTask.CosmosDB.Tests
 {

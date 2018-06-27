@@ -17,16 +17,17 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using DurableTask.AzureStorage.Monitoring;
-using DurableTask.AzureStorage.Partitioning;
-using DurableTask.CosmosDB;
+using DurableTask.CosmosDB.Monitoring;
+using DurableTask.CosmosDB.Partitioning;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents.Linq;
 using Newtonsoft.Json;
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.CosmosDB
 {
+    using DurableTask.CosmosDB.Collection;
+
     internal partial class CosmosDBLeaseManager : ILeaseManager, IDisposable
     {
         private string taskHubName;
@@ -86,7 +87,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
 
             return false;
@@ -106,7 +107,7 @@ namespace DurableTask.AzureStorage
             };
 
             await Utils.CreateCollectionIfNotExists(cosmosDbCollectionDefinition);
-            this.stats.CosmosDBRequests.Increment();
+            this.stats.CosmosDbRequests.Increment();
 
             for (int i = 0; i < eventHubInfo.PartitionCount; i++)
             {
@@ -141,7 +142,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
 
             }
         }
@@ -175,7 +176,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
 
             return leases.OrderBy(x => x.PartitionId);
@@ -226,7 +227,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
         }
 
@@ -285,7 +286,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
 
             return true;
@@ -330,7 +331,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
 
             }
 
@@ -373,7 +374,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
 
             return true;
@@ -397,7 +398,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
         }
 
@@ -414,7 +415,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
         }
 
@@ -447,7 +448,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
 
             return true;
@@ -490,7 +491,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
         }
 
@@ -542,7 +543,7 @@ namespace DurableTask.AzureStorage
             }
             finally
             {
-                this.stats.CosmosDBRequests.Increment();
+                this.stats.CosmosDbRequests.Increment();
             }
 
             return null;

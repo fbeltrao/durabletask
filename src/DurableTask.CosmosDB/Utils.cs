@@ -11,10 +11,10 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.CosmosDB
 {
-    using DurableTask.AzureStorage.Monitoring;
-    using DurableTask.AzureStorage.Partitioning;
+    using DurableTask.CosmosDB.Monitoring;
+    using DurableTask.CosmosDB.Partitioning;
     using DurableTask.CosmosDB;
     using Microsoft.Azure.Documents;
     using Microsoft.Azure.Documents.Client;
@@ -26,6 +26,7 @@ namespace DurableTask.AzureStorage
     using System.IO;
     using System.Text;
     using System.Threading.Tasks;
+    using DurableTask.CosmosDB.Collection;
 
     static class Utils
     {

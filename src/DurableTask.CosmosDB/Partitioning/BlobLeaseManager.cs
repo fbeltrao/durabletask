@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Partitioning
+namespace DurableTask.CosmosDB.Partitioning
 {
     using System;
     using System.Collections.Generic;
@@ -19,7 +19,7 @@ namespace DurableTask.AzureStorage.Partitioning
     using System.Linq;
     using System.Net;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage.Monitoring;
+    using DurableTask.CosmosDB.Monitoring;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Blob;
     using Microsoft.WindowsAzure.Storage.Blob.Protocol;

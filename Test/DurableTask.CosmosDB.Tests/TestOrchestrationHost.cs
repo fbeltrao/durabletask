@@ -18,7 +18,7 @@ namespace DurableTask.CosmosDB.Tests
     using System.Diagnostics;
     using System.Runtime.Serialization;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage;
+    using DurableTask.CosmosDB;
     using DurableTask.Core;
 
     internal sealed class TestOrchestrationHost : IDisposable

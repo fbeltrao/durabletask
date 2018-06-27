@@ -11,7 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage.Partitioning
+namespace DurableTask.CosmosDB.Partitioning
 {
     using System;
     using System.Runtime.Serialization;
@@ -20,13 +20,13 @@ namespace DurableTask.AzureStorage.Partitioning
     [Serializable]
     class LeaseLostException : Exception
     {
-        /// <summary>Initializes a new instance of the <see cref="DurableTask.AzureStorage.Partitioning.LeaseLostException" /> class using default values.</summary>
+        /// <summary>Initializes a new instance of the <see cref="DurableTask.CosmosDB.Partitioning.LeaseLostException" /> class using default values.</summary>
         public LeaseLostException()
             : base()
         {
         }
 
-        /// <summary>Initializes a new instance of the <see cref="DurableTask.AzureStorage.Partitioning.LeaseLostException" /> class using specified lease.</summary>
+        /// <summary>Initializes a new instance of the <see cref="DurableTask.CosmosDB.Partitioning.LeaseLostException" /> class using specified lease.</summary>
         /// <param name="lease">The messaging lease.</param>
         public LeaseLostException(Lease lease)
             : base()
@@ -35,7 +35,7 @@ namespace DurableTask.AzureStorage.Partitioning
         }
 
         /// <summary>Initializes a new instance of the 
-        /// <see cref="DurableTask.AzureStorage.Partitioning.LeaseLostException" /> class using specified lease and the error that caused the exception.</summary> 
+        /// <see cref="DurableTask.CosmosDB.Partitioning.LeaseLostException" /> class using specified lease and the error that caused the exception.</summary> 
         /// <param name="lease">The messaging lease.</param>
         /// <param name="innerException">The error that caused the exception.</param>
         public LeaseLostException(Lease lease, Exception innerException)
@@ -45,7 +45,7 @@ namespace DurableTask.AzureStorage.Partitioning
         }
 
         /// <summary>Initializes a new instance of the 
-        /// <see cref="DurableTask.AzureStorage.Partitioning.LeaseLostException" /> class using specified error message.</summary> 
+        /// <see cref="DurableTask.CosmosDB.Partitioning.LeaseLostException" /> class using specified error message.</summary> 
         /// <param name="message">The message associated with the error.</param>
         public LeaseLostException(string message)
             : base(message)
@@ -53,7 +53,7 @@ namespace DurableTask.AzureStorage.Partitioning
         }
 
         /// <summary>Initializes a new instance of the 
-        /// <see cref="DurableTask.AzureStorage.Partitioning.LeaseLostException" /> class using specified error message and inner exception.</summary> 
+        /// <see cref="DurableTask.CosmosDB.Partitioning.LeaseLostException" /> class using specified error message and inner exception.</summary> 
         /// <param name="message">The message associated with the error.</param>
         /// <param name="innerException">The error that caused the exception.</param>
         public LeaseLostException(string message, Exception innerException)
@@ -62,7 +62,7 @@ namespace DurableTask.AzureStorage.Partitioning
         }
 
         /// <summary>Initializes a new instance of the 
-        /// <see cref="DurableTask.AzureStorage.Partitioning.LeaseLostException" /> class using specified information and context.</summary> 
+        /// <see cref="DurableTask.CosmosDB.Partitioning.LeaseLostException" /> class using specified information and context.</summary> 
         /// <param name="info">The serialized information about the exception.</param>
         /// <param name="context">The contextual information about the source or destination.</param>
         protected LeaseLostException(SerializationInfo info, StreamingContext context) :

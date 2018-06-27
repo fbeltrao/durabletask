@@ -11,13 +11,9 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-using DurableTask.AzureStorage;
-using DurableTask.Core;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace DurableTask.CosmosDB.Queue
 {

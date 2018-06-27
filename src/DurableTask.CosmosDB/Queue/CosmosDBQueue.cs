@@ -11,10 +11,7 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-
-using DurableTask.AzureStorage;
 using DurableTask.Core;
-using DurableTask.CosmosDB.Queue;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.WindowsAzure.Storage;
@@ -23,13 +20,11 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace DurableTask.CosmosDB
+namespace DurableTask.CosmosDB.Queue
 {
     /// <summary>
     /// Cosmos db queue

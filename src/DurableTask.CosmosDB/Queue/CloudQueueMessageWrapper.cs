@@ -16,7 +16,7 @@ using System;
 
 namespace DurableTask.CosmosDB.Queue
 {
-    internal class CloudQueueMessageWrapper : IQueueMessage
+    class CloudQueueMessageWrapper : IQueueMessage
     {
         internal CloudQueueMessage CloudQueueMessage { get; }
 

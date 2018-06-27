@@ -16,7 +16,6 @@ namespace DurableTask.CosmosDB.Tracking
 {
     using System;
     using System.Collections.Generic;
-    using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
     using DurableTask.Core;
@@ -27,17 +26,17 @@ namespace DurableTask.CosmosDB.Tracking
     using Microsoft.Azure.Documents.Linq;
     using Newtonsoft.Json;
     using Newtonsoft.Json.Linq;
-    using DurableTask.AzureStorage;
+    using DurableTask.CosmosDB;
     using System.Reflection;
     using System.Runtime.Serialization;
     using System.Diagnostics;
 
     class CosmosDbTrackingStore : TrackingStoreBase, IDisposable
     {
-        private readonly DocumentClient documentClient;
-        private string instancesCollectionName;
-        private string historyCollectionName;
-        private string DatabaseName;
+        readonly DocumentClient documentClient;
+        string instancesCollectionName;
+        string historyCollectionName;
+        string DatabaseName;
         readonly IReadOnlyDictionary<EventType, Type> eventTypeMap;
 
         public Microsoft.WindowsAzure.Storage.Table.CloudTable HistoryTable { get; internal set; }

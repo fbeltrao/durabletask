@@ -23,8 +23,8 @@ namespace DurableTask.CosmosDB.Tracking
     using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
-    using DurableTask.AzureStorage;
-    using DurableTask.AzureStorage.Monitoring;
+    using DurableTask.CosmosDB;
+    using DurableTask.CosmosDB.Monitoring;
     using DurableTask.Core;
     using DurableTask.Core.History;
     using Microsoft.WindowsAzure.Storage;
