@@ -11,32 +11,37 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.CosmosDB
+namespace DurableTask.CosmosDB.Collection
 {
     /// <summary>
-    /// Queue item status
+    /// Cosmos DB collection definition
     /// </summary>
-    public enum QueueItemStatus
+    public class CosmosDBCollectionDefinition
     {
         /// <summary>
-        /// 
+        /// Endpoint (example: https://localhost:8081 for local CosmosDB)
         /// </summary>
-        Pending,
+        public string Endpoint { get; set; }
 
         /// <summary>
-        /// 
+        /// CosmosDB key
         /// </summary>
-        InProgress,
+        public string SecretKey { get; set; }
 
         /// <summary>
-        /// 
+        /// Database name
         /// </summary>
-        Completed,
+        public string DbName { get; set; }
 
         /// <summary>
-        /// 
+        /// Collection name
         /// </summary>
-        Failed
+        public string CollectionName { get; set; }
 
+        /// <summary>
+        /// Collection throughput
+        /// Default is 400
+        /// </summary>
+        public int Throughput { get; set; } = 400;
     }
 }

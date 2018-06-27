@@ -1,3 +1,15 @@
+---    
+Copyright Microsoft Corporation
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+---
 # Adding Cosmos DB Provider to Durable Framework
 
 This document describes the work we have done during Sync Week (+ a few days later). Participants in this project are Bindukaladeepan Chinnasamy, Francisco Beltrao, Luis Guerrero Guirado, Kanio Dimitrov, Steve Bohlen and Sarath Pinninty.
@@ -16,7 +28,6 @@ The team decided that a better approach would be to profit from the existing log
 
 ## Refactoring DurableTask.AzureStorage
 
-The Durable Task Framework offers extensibility through the interfaces IOrchestrationService and IOrchestrationServiceClient. Those are a high level definition of an orchestrator that a implementation should provide. The DurableTask.AzureStorage.AzureStorageOrchestrationService implementation, as expected, dependents on Azure Storage.
 
 Our first step was to extract the storage specific code from AzureStorageOrchestrationService by introducing abstractions. To accomplish that we copied the projects DurableTask.AzureStorage and DurableTask.AzureStorage.Tests renaming them with "CosmosDB". Next, we added interfaces to the dependency on azure storage classes, renaming the class to ExtensibleOrchestrationService.
 
