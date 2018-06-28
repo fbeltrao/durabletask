@@ -38,10 +38,6 @@ namespace DurableTask.CosmosDB.Queue
         private readonly AzureStorageOrchestrationServiceStats stats;
         readonly CloudQueueClient queueClient;
 
-        readonly ConcurrentDictionary<string, IQueue> ownedControlQueues;
-        readonly ConcurrentDictionary<string, IQueue> allControlQueues;
-        readonly IQueue workItemQueue;
-        private readonly string storageAccountName;
         readonly CloudBlobClient blobClient;
         internal readonly MessageManager messageManager;
 
@@ -56,11 +52,11 @@ namespace DurableTask.CosmosDB.Queue
             this.settings = settings;
             this.stats = stats;
             CloudStorageAccount account = CloudStorageAccount.Parse(settings.StorageConnectionString);
-            this.storageAccountName = account.Credentials.AccountName;
+            this.StorageName = account.Credentials.AccountName;
             this.queueClient = account.CreateCloudQueueClient();
             this.queueClient.BufferManager = SimpleBufferManager.Shared;
-            this.ownedControlQueues = new ConcurrentDictionary<string, IQueue>();
-            this.allControlQueues = new ConcurrentDictionary<string, IQueue>();
+            this.OwnedControlQueues = new ConcurrentDictionary<string, IQueue>();
+            this.AllControlQueues = new ConcurrentDictionary<string, IQueue>();
             this.blobClient = account.CreateCloudBlobClient();
             this.blobClient.BufferManager = SimpleBufferManager.Shared;
 
@@ -69,29 +65,26 @@ namespace DurableTask.CosmosDB.Queue
             this.messageManager = new MessageManager(this.blobClient, compressedMessageBlobContainerName);
 
 
-            this.workItemQueue = GetWorkItemQueue(account);
+            this.WorkItemQueue = this.GetWorkItemQueue(account);
 
             for (int i = 0; i < this.settings.PartitionCount; i++)
             {
-                var queue = this.queueClient.GetQueueReference(Utils.GetControlQueueId(this.settings.TaskHubName, i));                
-                this.allControlQueues.TryAdd(queue.Name, new CloudQueueWrapper(queue));
+                CloudQueue queue = this.queueClient.GetQueueReference(Utils.GetControlQueueId(this.settings.TaskHubName, i));                
+                this.AllControlQueues.TryAdd(queue.Name, new CloudQueueWrapper(queue));
             }
         }
 
         /// <inheritdoc />
-        public ConcurrentDictionary<string, IQueue> AllControlQueues { get { return this.allControlQueues; } }
+        public ConcurrentDictionary<string, IQueue> AllControlQueues { get; }
 
         /// <inheritdoc />
-        public ConcurrentDictionary<string, IQueue> OwnedControlQueues { get { return this.ownedControlQueues; } }
+        public ConcurrentDictionary<string, IQueue> OwnedControlQueues { get; }
 
         /// <inheritdoc />
-        public IQueue WorkItemQueue => this.workItemQueue;
+        public IQueue WorkItemQueue { get; }
 
         /// <inheritdoc />
-        public string StorageName => this.storageAccountName;
-
-
-   
+        public string StorageName { get; }
 
         IQueue GetWorkItemQueue(CloudStorageAccount account)
         {
@@ -119,21 +112,21 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task DeleteAsync()
         {
-            foreach (string partitionId in this.allControlQueues.Keys)
+            foreach (string partitionId in this.AllControlQueues.Keys)
             {
-                if (this.allControlQueues.TryGetValue(partitionId, out var controlQueue))
+                if (this.AllControlQueues.TryGetValue(partitionId, out var controlQueue))
                 {
                     await controlQueue.DeleteIfExistsAsync();
                 }
             }
 
-            await this.workItemQueue.DeleteIfExistsAsync();
+            await this.WorkItemQueue.DeleteIfExistsAsync();
         }
 
         /// <inheritdoc />
         public Task StartAsync()
         {
-            var workItemCloudQueue = ((CloudQueueWrapper)this.workItemQueue).cloudQueue;
+            CloudQueue workItemCloudQueue = ((CloudQueueWrapper)this.WorkItemQueue).CloudQueue;
             ServicePointManager.FindServicePoint(workItemCloudQueue.Uri).UseNagleAlgorithm = false;
             return Task.FromResult<object>(null);
         }
@@ -149,10 +142,10 @@ namespace DurableTask.CosmosDB.Queue
         {
             var messages = new List<MessageData>();
 
-            await this.ownedControlQueues.Values.ParallelForEachAsync(
+            await this.OwnedControlQueues.Values.ParallelForEachAsync(
                 async delegate (IQueue controlQueue)
                 {
-                    var batch = await controlQueue.GetMessagesAsync(
+                    IEnumerable<IQueueMessage> batch = await controlQueue.GetMessagesAsync(
                         this.settings.ControlQueueBatchSize,
                         this.settings.ControlQueueVisibilityTimeout,
                         ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
@@ -178,7 +171,7 @@ namespace DurableTask.CosmosDB.Queue
 
         Task<CloudQueueMessage> CreateOutboundQueueMessageAsync(MessageManager messageManager, TaskMessage taskMessage, string queueName)
         {
-            return CreateOutboundQueueMessageInternalAsync(messageManager, this.storageAccountName, this.settings.TaskHubName, queueName, taskMessage);
+            return this.CreateOutboundQueueMessageInternalAsync(messageManager, this.StorageName, this.settings.TaskHubName, queueName, taskMessage);
         }
 
         async Task<CloudQueueMessage> CreateOutboundQueueMessageInternalAsync(
@@ -211,9 +204,9 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task EnqueueMessageAsync(IQueue queue, ReceivedMessageContext context, TaskMessage taskMessage, TimeSpan? initialVisibilityDelay, QueueRequestOptions queueRequestOptions)
         {
-            CloudQueueMessage message = await CreateOutboundQueueMessageAsync(this.messageManager, taskMessage, queue.Name);
+            CloudQueueMessage message = await this.CreateOutboundQueueMessageAsync(this.messageManager, taskMessage, queue.Name);
             var wq = (CloudQueueWrapper)queue;
-            await wq.cloudQueue.AddMessageAsync(
+            await wq.CloudQueue.AddMessageAsync(
                 message,
                 null /* timeToLive */,
                 initialVisibilityDelay,
@@ -224,7 +217,7 @@ namespace DurableTask.CosmosDB.Queue
         public async Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
             var wq = (CloudQueueWrapper)queue;
-            var queueMessage = await wq.cloudQueue.GetMessageAsync(
+            CloudQueueMessage queueMessage = await wq.CloudQueue.GetMessageAsync(
                     queueVisibilityTimeout,
                     requestOptions,
                     operationContext,
@@ -236,7 +229,7 @@ namespace DurableTask.CosmosDB.Queue
             {
                 ReceivedMessageContext context = await ReceivedMessageContext.CreateFromReceivedMessageAsync(
                    this.messageManager,
-                   this.storageAccountName,
+                   this.StorageName,
                    this.settings.TaskHubName,
                    queueMessage,
                    queue.Name);
@@ -250,14 +243,14 @@ namespace DurableTask.CosmosDB.Queue
         public async Task AddMessageAsync(IQueue queue, TaskMessage message, TimeSpan? timeToLive, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
             var wq = (CloudQueueWrapper)queue;
-            var cloudQueueMessage = await CreateOutboundQueueMessageInternalAsync(
+            CloudQueueMessage cloudQueueMessage = await CreateOutboundQueueMessageInternalAsync(
                     this.messageManager,
-                    this.storageAccountName,
+                    this.StorageName,
                     this.settings.TaskHubName,
                     queue.Name,
                     message);
 
-            await wq.cloudQueue.AddMessageAsync(
+            await wq.CloudQueue.AddMessageAsync(
                 cloudQueueMessage,
                 timeToLive,
                 initialVisibilityDelay,
@@ -272,8 +265,8 @@ namespace DurableTask.CosmosDB.Queue
         {
             CloudStorageAccount account = CloudStorageAccount.Parse(settings.StorageConnectionString);
 
-            var inactiveLeaseManager = BlobLeaseManager.GetBlobLeaseManager(this.settings.TaskHubName, "n/a", account, TimeSpan.Zero, TimeSpan.Zero, null);
-            var hubInfo = await inactiveLeaseManager.GetOrCreateTaskHubInfoAsync(
+            BlobLeaseManager inactiveLeaseManager = BlobLeaseManager.GetBlobLeaseManager(this.settings.TaskHubName, "n/a", account, TimeSpan.Zero, TimeSpan.Zero, null);
+            TaskHubInfo hubInfo = await inactiveLeaseManager.GetOrCreateTaskHubInfoAsync(
                 TaskHubInfo.GetTaskHubInfo(this.settings.TaskHubName, partitionCount));
 
             CloudQueueClient queueClient = account.CreateCloudQueueClient();
@@ -281,7 +274,7 @@ namespace DurableTask.CosmosDB.Queue
             var controlQueues = new IQueue[hubInfo.PartitionCount];
             for (int i = 0; i < hubInfo.PartitionCount; i++)
             {
-                var queue = queueClient.GetQueueReference(Utils.GetControlQueueId(settings.TaskHubName, i));
+                CloudQueue queue = queueClient.GetQueueReference(Utils.GetControlQueueId(settings.TaskHubName, i));
                 controlQueues[i] = new CloudQueueWrapper(queue);
             }
 

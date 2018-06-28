@@ -29,7 +29,7 @@ namespace DurableTask.CosmosDB
         /// </summary>
         public OrchestrationTrackDocument()
         {
-            History = new Dictionary<string, List<JObject>>();
+            this.History = new Dictionary<string, List<JObject>>();
         }
 
         /// <summary>

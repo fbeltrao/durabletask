@@ -31,12 +31,10 @@ namespace DurableTask.CosmosDB.Queue
     /// </summary>
     public class CosmosDBQueue : IDisposable, IQueue
     {
-        private CosmosDBQueueSettings settings;
+        private readonly CosmosDbQueueSettings settings;
         DocumentClient documentClientWithSerializationSettings;
         DocumentClient documentClientWithoutSerializationSettings;
         bool initialized = false;
-        private readonly string queueName;
-        //const int MaxTaskMessageLength = 200000;
 
         /// <summary>
         /// Indicate if completed queue items should be deleted
@@ -44,7 +42,7 @@ namespace DurableTask.CosmosDB.Queue
         public bool DeletedCompletedItems { get; set; } = true;
 
         /// <summary>
-        /// Biggest size of message to be handled inline
+        /// Biggest size of message to be handled in-line
         /// </summary>
         public int MaxTaskMessageLength { get; set; } = 0;
 
@@ -55,32 +53,29 @@ namespace DurableTask.CosmosDB.Queue
         /// <summary>
         /// Constructor
         /// </summary>
-        public CosmosDBQueue(CosmosDBQueueSettings settings, string name)
+        public CosmosDBQueue(CosmosDbQueueSettings settings, string name)
         {
             this.settings = settings;
-            this.queueName = name;
+            this.Name = name;
         }
-
-
-
 
         /// <summary>
         /// Enqueues a message
         /// </summary>
         /// <param name="message"></param>
         /// <returns></returns>
-        internal async Task<CosmosDBQueueMessage> Enqueue(CosmosDBQueueMessage message)
+        internal async Task<CosmosDbQueueMessage> Enqueue(CosmosDbQueueMessage message)
         {
             if (!this.initialized)            
                 throw new InvalidOperationException("Must call Initialize() first");
 
-            message.QueueName = this.queueName;
+            message.QueueName = this.Name;
             message.CreatedDate = Utils.ToUnixTime(DateTime.UtcNow);
             if (message.NextVisibleTime <= 0)
                 message.NextVisibleTime = Utils.ToUnixTime(DateTime.UtcNow);
-            var uri = UriFactory.CreateDocumentCollectionUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName);
+            Uri uri = UriFactory.CreateDocumentCollectionUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName);
 
-            var res = await SaveQueueItem(message);
+            ResourceResponse<Document> res = await SaveQueueItem(message);
 
             message.ETag = res.Resource.ETag;
             message.Id = res.Resource.Id;
@@ -91,23 +86,22 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task<IEnumerable<IQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            StoredProcedureResponse<string> response = null;
             try
             {
                 controlQueueBatchSize = Math.Min(controlQueueBatchSize, 20);
 
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
-                var queueVisibilityParameterValue = Utils.ToUnixTime(DateTime.UtcNow.Add(controlQueueVisibilityTimeout));
-                response = await this.documentClientWithoutSerializationSettings.ExecuteStoredProcedureAsync<string>(
+                Uri storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
+                long queueVisibilityParameterValue = Utils.ToUnixTime(DateTime.UtcNow.Add(controlQueueVisibilityTimeout));
+                StoredProcedureResponse<string> response = await this.documentClientWithoutSerializationSettings.ExecuteStoredProcedureAsync<string>(
                     storedProcedureUri,
                     controlQueueBatchSize,
                     queueVisibilityParameterValue,
                     this.QueueItemLockInSeconds,
-                    this.queueName);
+                    this.Name);
 
                 if (!string.IsNullOrEmpty(response.Response) && response.Response != "[]")
                 {
-                    return await BuildQueueItems(response.Response);
+                    return await this.BuildQueueItems(response.Response);
                 }
 
                 return null;
@@ -119,27 +113,26 @@ namespace DurableTask.CosmosDB.Queue
                 //throw;
             }
 
-            return new CosmosDBQueueMessage[0];
+            return new CosmosDbQueueMessage[0];
         }
 
 
         internal async Task<IQueueMessage> GetMessageAsync(TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            StoredProcedureResponse<string> response = null;
             try
             {
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
-                var queueVisibilityParameterValue = (int)Utils.ToUnixTime(DateTime.UtcNow.Add(queueVisibilityTimeout));
-                response = await this.documentClientWithoutSerializationSettings.ExecuteStoredProcedureAsync<string>(
+                Uri storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
+                int queueVisibilityParameterValue = (int)Utils.ToUnixTime(DateTime.UtcNow.Add(queueVisibilityTimeout));
+                StoredProcedureResponse<string> response = await this.documentClientWithoutSerializationSettings.ExecuteStoredProcedureAsync<string>(
                     storedProcedureUri,
                     1, 
                     queueVisibilityParameterValue,
                     this.QueueItemLockInSeconds,
-                    this.queueName);
+                    this.Name);
 
                 if (!string.IsNullOrEmpty(response.Response) && response.Response != "[]")
                 {
-                    return (await BuildQueueItems(response.Response))?.FirstOrDefault();
+                    return (await this.BuildQueueItems(response.Response))?.FirstOrDefault();
                     
                 }
 
@@ -157,19 +150,19 @@ namespace DurableTask.CosmosDB.Queue
 
         private async Task<IEnumerable<IQueueMessage>> BuildQueueItems(string json)
         {
-            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDBQueueMessage>>(json,
+            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDbQueueMessage>>(json,
                         new JsonSerializerSettings
                         {
                             TypeNameHandling = TypeNameHandling.Objects
                         });
 
-
-            if (result.Any())
+            IEnumerable<CosmosDbQueueMessage> cosmosDbQueueMessages = result as IList<CosmosDbQueueMessage> ?? result.ToList();
+            if (cosmosDbQueueMessages.Any())
             {
                 var docs = (JArray)JsonConvert.DeserializeObject(json);
-                for (var i = docs.Count - 1; i >= 0; --i)
+                for (int i = docs.Count - 1; i >= 0; --i)
                 {
-                    var queueItem = result.ElementAt(i);
+                    CosmosDbQueueMessage queueItem = cosmosDbQueueMessages.ElementAt(i);
                     queueItem.ETag = docs[i]["_etag"].ToString();
                     
                     if (queueItem.Data is MessageData messageData)
@@ -186,14 +179,14 @@ namespace DurableTask.CosmosDB.Queue
                 }
             }
 
-            return result;
+            return cosmosDbQueueMessages;
         }
 
         internal async Task CompleteAsync(string id)
         {
-            var documentUri = UriFactory.CreateDocumentUri(
-                settings.QueueCollectionDefinition.DbName,
-                settings.QueueCollectionDefinition.CollectionName,
+            Uri documentUri = UriFactory.CreateDocumentUri(
+                this.settings.QueueCollectionDefinition.DbName,
+                this.settings.QueueCollectionDefinition.CollectionName,
                 id);
 
             await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.DeleteDocumentAsync(documentUri));
@@ -204,7 +197,7 @@ namespace DurableTask.CosmosDB.Queue
         
 
         /// <inheritdoc />
-        public string Name => this.queueName;
+        public string Name { get; }
 
         /// <summary>
         /// Queue item lock in seconds. Default is 60 seconds
@@ -217,7 +210,7 @@ namespace DurableTask.CosmosDB.Queue
         /// <param name="disposing"></param>
         protected virtual void Dispose(bool disposing)
         {
-            if (!disposedValue)
+            if (!this.disposedValue)
             {
                 if (disposing)
                 {
@@ -225,7 +218,7 @@ namespace DurableTask.CosmosDB.Queue
                     this.documentClientWithSerializationSettings = null;
                 }
 
-                disposedValue = true;
+                this.disposedValue = true;
             }
         }
         
@@ -234,8 +227,8 @@ namespace DurableTask.CosmosDB.Queue
         /// Dispose
         /// </summary>
         public void Dispose()
-        {           
-            Dispose(true);
+        {
+            this.Dispose(true);
             GC.SuppressFinalize(this);
         }
 
@@ -259,10 +252,10 @@ namespace DurableTask.CosmosDB.Queue
                new Uri(this.settings.QueueCollectionDefinition.Endpoint),
                this.settings.QueueCollectionDefinition.SecretKey);
 
-            var createStoredProcedure = false;
+            bool createStoredProcedure = false;
             try
             {
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
+                Uri storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
                 await this.documentClientWithSerializationSettings.ReadStoredProcedureAsync(storedProcedureUri);
 
             }
@@ -274,85 +267,85 @@ namespace DurableTask.CosmosDB.Queue
 
             if (createStoredProcedure)
             {
-                var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName);
+                Uri collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName);
                 var storedProcedure = new StoredProcedure()
                 {
                     Id = DequeueItemsStoredProcedureName,
                     Body = @"
-/*
-    @batchSize: the amount of items to dequeue
-    @visibilityStarts: visibility starting datetime
-    @timeoutStarts: when the timeout for items in process starts
-    @lockUntil: amount of time the items will be locked by
-    @queueName: queue name to dequeue from
-*/
-function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueName) {
-    var collection = getContext().getCollection();
+                    /*
+                        @batchSize: the amount of items to dequeue
+                        @visibilityStarts: visibility starting datetime
+                        @timeoutStarts: when the timeout for items in process starts
+                        @lockUntil: amount of time the items will be locked by
+                        @queueName: queue name to dequeue from
+                    */
+                    function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueName) {
+                        var collection = getContext().getCollection();
 
-    var currentDate = Math.floor(new Date() / 1000);
-    var dequeuedItemLockUntil = currentDate + lockDurationInSeconds;
-    var searchItemsLockUntil = Math.floor(currentDate + (lockDurationInSeconds / 2));
-    var itemsToReturn = [];
-    var foundItemsCount = 0;
-    var processedItemsCount = 0;
+                        var currentDate = Math.floor(new Date() / 1000);
+                        var dequeuedItemLockUntil = currentDate + lockDurationInSeconds;
+                        var searchItemsLockUntil = Math.floor(currentDate + (lockDurationInSeconds / 2));
+                        var itemsToReturn = [];
+                        var foundItemsCount = 0;
+                        var processedItemsCount = 0;
     
-    var query = {
-        query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextVisibleTime <= @visibilityStarts AND c.QueueName = @queueName AND ((c.Status = ""Pending"")) ORDER by c.NextVisibleTime',
-        parameters: [
-            { name: ""@queueName"", value: queueName }, 
-            { name: ""@visibilityStarts"", value: visibilityStarts }, 
-            { name: '@searchItemsLockUntil', value: searchItemsLockUntil }]
-    };
+                        var query = {
+                            query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextVisibleTime <= @visibilityStarts AND c.QueueName = @queueName AND ((c.Status = ""Pending"")) ORDER by c.NextVisibleTime',
+                            parameters: [
+                                { name: ""@queueName"", value: queueName }, 
+                                { name: ""@visibilityStarts"", value: visibilityStarts }, 
+                                { name: '@searchItemsLockUntil', value: searchItemsLockUntil }]
+                        };
 
-    collection.queryDocuments(
-        collection.getSelfLink(),
-        query,
-        function (err, feed, options) {
-            if (err) throw err;
+                        collection.queryDocuments(
+                            collection.getSelfLink(),
+                            query,
+                            function (err, feed, options) {
+                                if (err) throw err;
 
-            if (!feed || !feed.length) {
-                var response = getContext().getResponse();                
-                response.setBody('[]');
-                return response;
-            }
+                                if (!feed || !feed.length) {
+                                    var response = getContext().getResponse();                
+                                    response.setBody('[]');
+                                    return response;
+                                }
 
-            foundItemsCount = feed.length;
+                                foundItemsCount = feed.length;
 
-            updateDocument(feed, 0);
+                                updateDocument(feed, 0);
 
-        }
-    );
+                            }
+                        );
 
-    function updateDocument(docs, index) {
-        var doc = docs[index];
-        doc.Status = 'InProgress';
-        doc.DequeueCount = doc.DequeueCount + 1;
-        doc.LockedUntil = dequeuedItemLockUntil;
+                        function updateDocument(docs, index) {
+                            var doc = docs[index];
+                            doc.Status = 'InProgress';
+                            doc.DequeueCount = doc.DequeueCount + 1;
+                            doc.LockedUntil = dequeuedItemLockUntil;
 
-        collection.replaceDocument(
-            doc._self,
-            doc,
-            function (err, docReplaced) {
-                if (!err) {
-                    itemsToReturn.push(docReplaced);
-                }
+                            collection.replaceDocument(
+                                doc._self,
+                                doc,
+                                function (err, docReplaced) {
+                                    if (!err) {
+                                        itemsToReturn.push(docReplaced);
+                                    }
 
-                ++processedItemsCount;
+                                    ++processedItemsCount;
 
-                if (processedItemsCount == foundItemsCount) {
-                    var response = getContext().getResponse();
-                    response.setBody(JSON.stringify(itemsToReturn));
-                } else {
-                    updateDocument(docs, index + 1);
-                }
-            }
-        );
-    }
-}
-",
+                                    if (processedItemsCount == foundItemsCount) {
+                                        var response = getContext().getResponse();
+                                        response.setBody(JSON.stringify(itemsToReturn));
+                                    } else {
+                                        updateDocument(docs, index + 1);
+                                    }
+                                }
+                            );
+                        }
+                    }
+                    ",
                 };
 
-                var createStoredProcedureResponse = await this.documentClientWithSerializationSettings.CreateStoredProcedureAsync(collectionUri, storedProcedure);
+                ResourceResponse<StoredProcedure> createStoredProcedureResponse = await this.documentClientWithSerializationSettings.CreateStoredProcedureAsync(collectionUri, storedProcedure);
             }
 
             this.initialized = true;
@@ -369,7 +362,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         /// <inheritdoc />
         public async Task DeleteMessageAsync(IQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            var cosmosQueueMessage = (CosmosDBQueueMessage)queueMessage;
+            var cosmosQueueMessage = (CosmosDbQueueMessage)queueMessage;
             if (this.DeletedCompletedItems)
             {
                 await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.DeleteDocumentAsync(
@@ -387,7 +380,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
             { 
                 cosmosQueueMessage.Status = QueueItemStatus.Completed;
                 cosmosQueueMessage.TimeToLive = (int)Utils.ToUnixTime(DateTime.UtcNow.AddHours(1));
-                await SaveQueueItem(cosmosQueueMessage);
+                await this.SaveQueueItem(cosmosQueueMessage);
             }
         }
 
@@ -396,7 +389,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         /// </summary>
         /// <param name="message"></param>
         /// <returns></returns>
-        async Task<ResourceResponse<Document>> SaveQueueItem(CosmosDBQueueMessage message)
+        async Task<ResourceResponse<Document>> SaveQueueItem(CosmosDbQueueMessage message)
         {
             var reqOptions = new RequestOptions()
             {
@@ -411,11 +404,11 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
             var messageData = message.Data as MessageData;
             if (messageData != null)
             {
-                if (MaxTaskMessageLength > 0)
+                if (this.MaxTaskMessageLength > 0)
                 {
                     if (messageData.TaskMessage != null)
                     {
-                        var serializedTaskMessage = JsonConvert.SerializeObject(messageData.TaskMessage);
+                        string serializedTaskMessage = JsonConvert.SerializeObject(messageData.TaskMessage);
                         if (serializedTaskMessage.Length > MaxTaskMessageLength)
                         {
                             attachmentTaskMessage = messageData.TaskMessage;
@@ -437,12 +430,12 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
                 }
             }
 
-            var createDocumentResponse = await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.UpsertDocumentAsync(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName), message, reqOptions));
+            ResourceResponse<Document> createDocumentResponse = await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.UpsertDocumentAsync(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName), message, reqOptions));
             
             if (attachmentTaskMessage != null)
             {
-                var createdDocumentUri = UriFactory.CreateDocumentUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName, createDocumentResponse.Resource.Id);
-                var attachmentResponse = await Utils.SaveAttachment(this.documentClientWithSerializationSettings, createdDocumentUri, attachmentTaskMessage, TaskMessageAttachmentId);
+                Uri createdDocumentUri = UriFactory.CreateDocumentUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName, createDocumentResponse.Resource.Id);
+                ResourceResponse<Attachment> attachmentResponse = await Utils.SaveAttachment(this.documentClientWithSerializationSettings, createdDocumentUri, attachmentTaskMessage, TaskMessageAttachmentId);
 
                 // set the task message back in the instance
                 messageData.TaskMessage = attachmentTaskMessage;
@@ -455,15 +448,15 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         /// <inheritdoc />
         public async Task UpdateMessageAsync(IQueueMessage originalQueueMessage, TimeSpan controlQueueVisibilityTimeout, MessageUpdateFields updateFields, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            var cosmosDBQueueMessage = (CosmosDBQueueMessage)originalQueueMessage;
+            var cosmosDbQueueMessage = (CosmosDbQueueMessage)originalQueueMessage;
             if (updateFields == MessageUpdateFields.Visibility)
             {
                 // We "abandon" the message by settings its visibility timeout to zero.
                 // This allows it to be reprocessed on this node or another node.
-                cosmosDBQueueMessage.Status = QueueItemStatus.Pending;
-                cosmosDBQueueMessage.LockedUntil = 0;
+                cosmosDbQueueMessage.Status = QueueItemStatus.Pending;
+                cosmosDbQueueMessage.LockedUntil = 0;
 
-                await SaveQueueItem(cosmosDBQueueMessage);
+                await this.SaveQueueItem(cosmosDbQueueMessage);
             }
         }
 
@@ -471,7 +464,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         public Task<IQueueMessage> PeekMessageAsync()
         {
             // TODO: implement it
-            var qm = new CosmosDBQueueMessage();
+            var qm = new CosmosDbQueueMessage();
             return Task.FromResult<IQueueMessage>(qm);
             //throw new NotImplementedException();
         }
@@ -479,10 +472,9 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         /// <inheritdoc />
         public Task<int> GetQueueLenghtAsync()
         {
-            var count = this.documentClientWithSerializationSettings.CreateDocumentQuery<CosmosDBQueueMessage>(
-                UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName))
-                .Where(x => x.Status == QueueItemStatus.Pending && x.NextVisibleTime <= Utils.ToUnixTime(DateTime.UtcNow))
-                .Count();
+            int count = this.documentClientWithSerializationSettings
+                .CreateDocumentQuery<CosmosDbQueueMessage>(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName))
+                .Count(x => x.Status == QueueItemStatus.Pending && x.NextVisibleTime <= Utils.ToUnixTime(DateTime.UtcNow));
 
             return Task.FromResult<int>(count);
         }
@@ -492,7 +484,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         {            
             try
             {
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
+                Uri storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
                 await this.documentClientWithSerializationSettings.ReadStoredProcedureAsync(storedProcedureUri);
 
             }

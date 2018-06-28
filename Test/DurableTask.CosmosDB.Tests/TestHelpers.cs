@@ -30,9 +30,9 @@ namespace DurableTask.CosmosDB.Tests
                 {
                     StorageConnectionString = storageConnectionString,
                     TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),
-                    CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
-                    CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
-                    CosmosDBLeaseManagementCollection = leaseManagementCollection,
+                    CosmosDbAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                    CosmosDbEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
+                    CosmosDbLeaseManagementCollection = leaseManagementCollection,
                 });
 
             service.CreateAsync().GetAwaiter().GetResult();

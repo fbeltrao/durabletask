@@ -94,21 +94,21 @@ namespace DurableTask.CosmosDB
         /// <summary>
         /// CosmosDB endpoint
         /// </summary>
-        string CosmosDBEndpoint { get; set; }
+        string CosmosDbEndpoint { get; set; }
 
         /// <summary>
         /// CosmosDB authorization key
         /// </summary>
-        string CosmosDBAuthKey { get; set; }
+        string CosmosDbAuthKey { get; set; }
 
         /// <summary>
         /// CosmosDB lease management collection name
         /// </summary>
-        string CosmosDBLeaseManagementCollection { get; set; }
+        string CosmosDbLeaseManagementCollection { get; set; }
 
         /// <summary>
         /// CosmosDB name
         /// </summary>
-        string CosmosDBName { get; set; }
+        string CosmosDbName { get; set; }
     }
 }

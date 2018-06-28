@@ -13,12 +13,8 @@
 
 namespace DurableTask.CosmosDB
 {
-    using DurableTask.CosmosDB.Monitoring;
-    using DurableTask.CosmosDB.Partitioning;
-    using DurableTask.CosmosDB;
     using Microsoft.Azure.Documents;
     using Microsoft.Azure.Documents.Client;
-    using Microsoft.WindowsAzure.Storage;
     using Newtonsoft.Json;
     using System;
     using System.Collections.Generic;

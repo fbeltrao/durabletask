@@ -19,7 +19,7 @@ namespace DurableTask.CosmosDB
     using System.Threading.Tasks;
 
     /// <summary>
-    /// Utility for implementing semi-intelligent backoff polling for Azure queues.
+    /// Utility for implementing semi-intelligent back off polling for Azure queues.
     /// </summary>
     class BackoffPollingHelper
     {
@@ -29,7 +29,7 @@ namespace DurableTask.CosmosDB
         readonly Stopwatch stopwatch;
 
         TimeSpan delayTimeout;
-        AsyncAutoResetEvent resetEvent;
+        readonly AsyncAutoResetEvent resetEvent;
 
         public BackoffPollingHelper(TimeSpan maxDelay, TimeSpan minDelayThreshold)
             : this(maxDelay, minDelayThreshold, sleepToWaitRatio: 0.1)
@@ -77,7 +77,7 @@ namespace DurableTask.CosmosDB
             double sleepDelayMs = elapsedMs * this.sleepToWaitRatio;
 
             TimeSpan nextDelay;
-            if (sleepDelayMs < minDelayThreasholdMs)
+            if (sleepDelayMs < this.minDelayThreasholdMs)
             {
                 nextDelay = TimeSpan.Zero;
             }

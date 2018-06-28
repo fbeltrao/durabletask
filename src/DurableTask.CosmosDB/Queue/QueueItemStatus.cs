@@ -37,6 +37,5 @@ namespace DurableTask.CosmosDB.Queue
         /// 
         /// </summary>
         Failed
-
     }
 }

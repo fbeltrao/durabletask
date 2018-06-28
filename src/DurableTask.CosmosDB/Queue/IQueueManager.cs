@@ -44,7 +44,7 @@ namespace DurableTask.CosmosDB.Queue
         IQueue WorkItemQueue { get; }
 
         /// <summary>
-        /// Queue persistance name for logging
+        /// Queue persistence name for logging
         /// For Storage: CloudStorageAccount.Credentials.AccountName
         /// </summary>
         string StorageName { get; }

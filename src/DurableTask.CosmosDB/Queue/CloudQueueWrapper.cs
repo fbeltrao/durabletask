@@ -22,11 +22,11 @@ using System.Threading.Tasks;
 namespace DurableTask.CosmosDB.Queue
 {
     /// <summary>
-    /// Wrapper for <see cref="CloudQueue"/>
+    /// Wrapper for <see cref="Microsoft.WindowsAzure.Storage.Queue.CloudQueue"/>
     /// </summary>
     public class CloudQueueWrapper : IQueue
     {
-        internal readonly CloudQueue cloudQueue;
+        internal readonly CloudQueue CloudQueue;
 
         /// <summary>
         /// Constructor
@@ -34,29 +34,29 @@ namespace DurableTask.CosmosDB.Queue
         /// <param name="cloudQueue"></param>
         public CloudQueueWrapper(CloudQueue cloudQueue)
         {
-            this.cloudQueue = cloudQueue;
+            this.CloudQueue = cloudQueue;
         }
 
         /// <inheritdoc />
-        public string Name => this.cloudQueue.Name;
+        public string Name => this.CloudQueue.Name;
 
         /// <inheritdoc />
         public async Task CreateIfNotExistsAsync()
         {
-            await this.cloudQueue.CreateIfNotExistsAsync();
+            await this.CloudQueue.CreateIfNotExistsAsync();
         }
 
         /// <inheritdoc />
         public async Task DeleteMessageAsync(IQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            await this.cloudQueue.DeleteMessageAsync(((CloudQueueMessageWrapper)queueMessage).CloudQueueMessage, requestOptions, operationContext);
+            await this.CloudQueue.DeleteMessageAsync(((CloudQueueMessageWrapper)queueMessage).CloudQueueMessage, requestOptions, operationContext);
             
         }
 
         /// <inheritdoc />
         public async Task<IEnumerable<IQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions controlQueueRequestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            return (await this.cloudQueue.GetMessagesAsync(
+            return (await this.CloudQueue.GetMessagesAsync(
                 controlQueueBatchSize,
                 controlQueueVisibilityTimeout,
                 controlQueueRequestOptions,
@@ -69,7 +69,7 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task UpdateMessageAsync(IQueueMessage originalQueueMessage, TimeSpan controlQueueVisibilityTimeout, MessageUpdateFields visibility, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            await this.cloudQueue.UpdateMessageAsync(
+            await this.CloudQueue.UpdateMessageAsync(
                 ((CloudQueueMessageWrapper)originalQueueMessage).CloudQueueMessage,
                 controlQueueVisibilityTimeout,
                 visibility,
@@ -81,14 +81,14 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task<bool> DeleteIfExistsAsync()
         {
-            return await this.cloudQueue.DeleteIfExistsAsync();
+            return await this.CloudQueue.DeleteIfExistsAsync();
         }
 
         /// <inheritdoc />
 
         public async Task<IQueueMessage> PeekMessageAsync()
         {
-            var cloudQueueMessage = await cloudQueue.PeekMessageAsync();
+            var cloudQueueMessage = await this.CloudQueue.PeekMessageAsync();
             if (cloudQueueMessage != null)
                 return new CloudQueueMessageWrapper(cloudQueueMessage);
 
@@ -99,15 +99,15 @@ namespace DurableTask.CosmosDB.Queue
 
         public async Task<int> GetQueueLenghtAsync()
         {
-            await cloudQueue.FetchAttributesAsync();
-            return cloudQueue.ApproximateMessageCount.GetValueOrDefault(0);
+            await this.CloudQueue.FetchAttributesAsync();
+            return this.CloudQueue.ApproximateMessageCount.GetValueOrDefault(0);
         }
 
         /// <inheritdoc />
 
         public async Task<bool> ExistsAsync()
         {
-            return await cloudQueue.ExistsAsync();
+            return await this.CloudQueue.ExistsAsync();
         }
     }
 }

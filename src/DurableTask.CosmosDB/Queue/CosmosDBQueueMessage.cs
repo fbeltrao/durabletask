@@ -20,7 +20,7 @@ namespace DurableTask.CosmosDB.Queue
     /// <summary>
     /// Cosmos DB queue message
     /// </summary>
-    class CosmosDBQueueMessage : IQueueMessage
+    class CosmosDbQueueMessage : IQueueMessage
     {
         [JsonIgnore]
         public DateTimeOffset? InsertionTime => Utils.FromUnixTime(this.CreatedDate);

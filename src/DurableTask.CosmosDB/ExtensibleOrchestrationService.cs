@@ -43,14 +43,12 @@ namespace DurableTask.CosmosDB
 
         static readonly HistoryEvent[] EmptyHistoryEventList = new HistoryEvent[0];
 
-        internal readonly IExtensibleOrchestrationServiceSettings settings;
+        internal readonly IExtensibleOrchestrationServiceSettings Settings;
         readonly AzureStorageOrchestrationServiceStats stats;
-        internal readonly IQueueManager queueManager;
+        internal readonly IQueueManager QueueManager;
 
         readonly LinkedList<PendingMessageBatch> pendingOrchestrationMessageBatches;
         readonly ConcurrentDictionary<string, object> activeOrchestrationInstances;
-
-        readonly ITrackingStore trackingStore;
 
         readonly TableEntityConverter tableEntityConverter;
 
@@ -89,36 +87,36 @@ namespace DurableTask.CosmosDB
             ValidateSettings(settings);
 
             // TBD - decide if we will use Storage or Cosmos DB. For now initialize Storage specific settings. 
-            this.settings = settings;
+            this.Settings = settings;
             this.tableEntityConverter = new TableEntityConverter();
             this.stats = new AzureStorageOrchestrationServiceStats();
 
             if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                this.queueManager = new StorageQueueManager(settings, stats);
+                this.QueueManager = new StorageQueueManager(settings, this.stats);
             else
-                this.queueManager = new CosmosDBQueueManager(settings, stats);
+                this.QueueManager = new CosmosDBQueueManager(settings, this.stats);
 
             if (customInstanceStore == null)
             {
                 if (!string.IsNullOrEmpty(settings.StorageConnectionString))
                 {
-                    var storageQueueManager = (StorageQueueManager)this.queueManager;
-                    this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, storageQueueManager.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
+                    var storageQueueManager = (StorageQueueManager)this.QueueManager;
+                    this.TrackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, storageQueueManager.messageManager, ((StorageOrchestrationServiceSettings)this.Settings).HistoryTableRequestOptions, this.stats);
                 }
                 else
                 {
-                    this.trackingStore = new CosmosDbTrackingStore(settings.CosmosDBEndpoint, settings.CosmosDBAuthKey, $"{settings.TaskHubName}instance", $"{settings.TaskHubName}history", "durabletask");
+                    this.TrackingStore = new CosmosDbTrackingStore(settings.CosmosDbEndpoint, settings.CosmosDbAuthKey, $"{settings.TaskHubName}instance", $"{settings.TaskHubName}history", "durabletask");
                 }
             }
             else
             {
-                this.trackingStore = new InstanceStoreBackedTrackingStore(customInstanceStore);
+                this.TrackingStore = new InstanceStoreBackedTrackingStore(customInstanceStore);
             }
 
             this.pendingOrchestrationMessageBatches = new LinkedList<PendingMessageBatch>();
             this.activeOrchestrationInstances = new ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-            // Queue polling backoff policies
+            // Queue polling back off policies
             var minPollingDelayThreshold = TimeSpan.FromMilliseconds(500);
             this.controlQueueBackoff = new BackoffPollingHelper(MaxQueuePollingDelay, minPollingDelayThreshold);
             this.workItemQueueBackoff = new BackoffPollingHelper(MaxQueuePollingDelay, minPollingDelayThreshold);
@@ -128,7 +126,7 @@ namespace DurableTask.CosmosDB
                 this.GetTaskHubCreatorTask,
                 LazyThreadSafetyMode.ExecutionAndPublication);
 
-            if (string.IsNullOrEmpty(settings.CosmosDBLeaseManagementCollection))
+            if (string.IsNullOrEmpty(settings.CosmosDbLeaseManagementCollection))
             {
                 this.leaseManager = BlobLeaseManager.GetBlobLeaseManager(
                     settings.TaskHubName,
@@ -139,8 +137,8 @@ namespace DurableTask.CosmosDB
                     this.stats);
 
                 this.partitionManager = new PartitionManager<BlobLease>(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     settings.WorkerId,
                     this.leaseManager,
                     new PartitionManagerOptions
@@ -155,17 +153,17 @@ namespace DurableTask.CosmosDB
                 this.leaseManager = new CosmosDBLeaseManager(
                     settings.TaskHubName,
                     settings.WorkerId,
-                    settings.CosmosDBEndpoint,
-                    settings.CosmosDBAuthKey,
-                    settings.CosmosDBName,
-                    settings.CosmosDBLeaseManagementCollection,
+                    settings.CosmosDbEndpoint,
+                    settings.CosmosDbAuthKey,
+                    settings.CosmosDbName,
+                    settings.CosmosDbLeaseManagementCollection,
                     settings.LeaseInterval,
                     settings.LeaseRenewInterval,
                     this.stats);
 
                 this.partitionManager = new PartitionManager<CosmosDBLease>(
-                    settings.CosmosDBLeaseManagementCollection,
-                    this.settings.TaskHubName,
+                    settings.CosmosDbLeaseManagementCollection,
+                    this.Settings.TaskHubName,
                     settings.WorkerId,
                     this.leaseManager,
                     new PartitionManagerOptions
@@ -177,20 +175,15 @@ namespace DurableTask.CosmosDB
             }
         }
 
-        internal string WorkerId => this.settings.WorkerId;
+        internal string WorkerId => this.Settings.WorkerId;
 
-        internal IEnumerable<IQueue> AllControlQueues => this.queueManager.AllControlQueues.Values;
+        internal IEnumerable<IQueue> AllControlQueues => this.QueueManager.AllControlQueues.Values;
 
-        internal IEnumerable<IQueue> OwnedControlQueues => this.queueManager.OwnedControlQueues.Values;
+        internal IEnumerable<IQueue> OwnedControlQueues => this.QueueManager.OwnedControlQueues.Values;
 
-        internal IQueue WorkItemQueue => this.queueManager.WorkItemQueue;
+        internal IQueue WorkItemQueue => this.QueueManager.WorkItemQueue;
 
-        internal ITrackingStore TrackingStore => this.trackingStore;
-
-        
-
-
-
+        internal ITrackingStore TrackingStore { get; }
 
         static void ValidateSettings(IExtensibleOrchestrationServiceSettings settings)
         {
@@ -211,18 +204,12 @@ namespace DurableTask.CosmosDB
         /// <summary>
         /// Gets or sets the maximum number of orchestrations that can be processed concurrently on a single node.
         /// </summary>
-        public int MaxConcurrentTaskOrchestrationWorkItems
-        {
-            get { return this.settings.MaxConcurrentTaskOrchestrationWorkItems; }
-        }
+        public int MaxConcurrentTaskOrchestrationWorkItems => this.Settings.MaxConcurrentTaskOrchestrationWorkItems;
 
         /// <summary>
         /// Gets or sets the maximum number of work items that can be processed concurrently on a single node.
         /// </summary>
-        public int MaxConcurrentTaskActivityWorkItems
-        {
-            get { return this.settings.MaxConcurrentTaskActivityWorkItems; }
-        }
+        public int MaxConcurrentTaskActivityWorkItems => this.Settings.MaxConcurrentTaskActivityWorkItems;
 
         // We always leave the dispatcher counts at one unless we can find a customer workload that requires more.
         /// <inheritdoc />
@@ -233,11 +220,11 @@ namespace DurableTask.CosmosDB
 
         #region Management Operations (Create/Delete/Start/Stop)
         /// <summary>
-        /// Deletes and creates the neccesary Azure Storage resources for the orchestration service.
+        /// Deletes and creates the necessary Azure Storage resources for the orchestration service.
         /// </summary>
         public async Task CreateAsync()
         {
-            await DeleteAsync();
+            await this.DeleteAsync();
             await this.taskHubCreator.Value;
         }
 
@@ -252,17 +239,17 @@ namespace DurableTask.CosmosDB
         // Internal logic used by the lazy taskHubCreator
         async Task GetTaskHubCreatorTask()
         {
-            var hubInfo = TaskHubInfo.GetTaskHubInfo(this.settings.TaskHubName, this.settings.PartitionCount);
+            TaskHubInfo hubInfo = TaskHubInfo.GetTaskHubInfo(this.Settings.TaskHubName, this.Settings.PartitionCount);
             await this.leaseManager.CreateLeaseStoreIfNotExistsAsync(hubInfo);
             this.stats.StorageRequests.Increment();
 
-            var tasks = new List<Task>();
+            var tasks = new List<Task>
+            {
+                this.TrackingStore.CreateAsync(),
+                this.WorkItemQueue.CreateIfNotExistsAsync()
+            };
 
-            tasks.Add(this.trackingStore.CreateAsync());
-
-            tasks.Add(this.WorkItemQueue.CreateIfNotExistsAsync());
-
-            foreach (var controlQueue in this.AllControlQueues)
+            foreach (IQueue controlQueue in this.AllControlQueues)
             {
                 tasks.Add(controlQueue.CreateIfNotExistsAsync());
                 tasks.Add(this.leaseManager.CreateLeaseIfNotExistAsync(controlQueue.Name));
@@ -277,7 +264,7 @@ namespace DurableTask.CosmosDB
         /// </summary>
         public Task DeleteAsync()
         {
-            return DeleteAsync(true);
+            return this.DeleteAsync(true);
         }
 
         Task EnsuredCreatedIfNotExistsAsync()
@@ -290,7 +277,7 @@ namespace DurableTask.CosmosDB
         {
             if (recreateInstanceStore)
             {
-                await DeleteTrackingStore();
+                await this.DeleteTrackingStore();
 
                 this.taskHubCreator.Reset();
             }
@@ -301,12 +288,14 @@ namespace DurableTask.CosmosDB
         /// <inheritdoc />
         public async Task DeleteAsync(bool deleteInstanceStore)
         {
-            var tasks = new List<Task>();
-            tasks.Add(this.queueManager.DeleteAsync());
+            var tasks = new List<Task>
+            {
+                this.QueueManager.DeleteAsync()
+            };
 
             if (deleteInstanceStore)
             {
-                tasks.Add(DeleteTrackingStore());
+                tasks.Add(this.DeleteTrackingStore());
             }
 
             // This code will throw if the container doesn't exist.
@@ -332,7 +321,7 @@ namespace DurableTask.CosmosDB
 
         private Task DeleteTrackingStore()
         {
-            return this.trackingStore.DeleteAsync();
+            return this.TrackingStore.DeleteAsync();
         }
 
         /// <inheritdoc />
@@ -347,8 +336,8 @@ namespace DurableTask.CosmosDB
             // https://blogs.msdn.microsoft.com/windowsazurestorage/2010/06/25/nagles-algorithm-is-not-friendly-towards-small-requests/
             // Ad-hoc testing has shown very nice improvements (20%-50% drop in queue message age for simple scenarios).
 
-            await this.trackingStore.StartAsync();
-            await this.queueManager.StartAsync();
+            await this.TrackingStore.StartAsync();
+            await this.QueueManager.StartAsync();
 
             this.shutdownSource = new CancellationTokenSource();
             this.statsLoop = Task.Run(() => this.ReportStatsLoop(this.shutdownSource.Token));
@@ -392,8 +381,8 @@ namespace DurableTask.CosmosDB
                 catch (Exception e)
                 {
                     AnalyticsEventSource.Log.GeneralError(
-                        this.queueManager.StorageName,
-                        this.settings.TaskHubName,
+                        this.QueueManager.StorageName,
+                        this.Settings.TaskHubName,
                         $"Unexpected error in {nameof(ReportStatsLoop)}: {e}");
                 }
             }
@@ -422,8 +411,8 @@ namespace DurableTask.CosmosDB
             }
 
             AnalyticsEventSource.Log.OrchestrationServiceStats(
-                this.queueManager.StorageName,
-                this.settings.TaskHubName,
+                this.QueueManager.StorageName,
+                this.Settings.TaskHubName,
                 storageRequests,
                 messagesSent,
                 messagesRead,
@@ -445,22 +434,22 @@ namespace DurableTask.CosmosDB
             //this.ownedControlQueues[lease.PartitionId] = controlQueue;
             //this.allControlQueues[lease.PartitionId] = controlQueue;
 
-            var controlQueue = this.queueManager.GetControlQueue(lease.PartitionId);
+            var controlQueue = this.QueueManager.GetControlQueue(lease.PartitionId);
             await controlQueue.CreateIfNotExistsAsync();
-            this.queueManager.OwnedControlQueues[lease.PartitionId] = controlQueue;
-            this.queueManager.AllControlQueues[lease.PartitionId] = controlQueue;
+            this.QueueManager.OwnedControlQueues[lease.PartitionId] = controlQueue;
+            this.QueueManager.AllControlQueues[lease.PartitionId] = controlQueue;
 
         }
 
         Task IPartitionObserver.OnPartitionReleasedAsync(Lease lease, CloseReason reason)
         {
-            if (!this.queueManager.OwnedControlQueues.TryRemove(lease.PartitionId, out var controlQueue))
+            if (!this.QueueManager.OwnedControlQueues.TryRemove(lease.PartitionId, out var controlQueue))
             {
                 AnalyticsEventSource.Log.PartitionManagerWarning(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
-                    this.settings.WorkerId,
-                    $"Worker ${this.settings.WorkerId} lost a lease '{lease.PartitionId}' but didn't own the queue.");
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
+                    this.Settings.WorkerId,
+                    $"Worker ${this.Settings.WorkerId} lost a lease '{lease.PartitionId}' but didn't own the queue.");
             }
 
             return Utils.CompletedTask;
@@ -496,9 +485,9 @@ namespace DurableTask.CosmosDB
                 List<MessageData> messages = null;
 
                 // Stop dequeuing messages if the buffer gets too full.
-                if (this.stats.PendingOrchestratorMessages.Value < this.settings.ControlQueueBufferThreshold)
+                if (this.stats.PendingOrchestratorMessages.Value < this.Settings.ControlQueueBufferThreshold)
                 {
-                    messages = await this.queueManager.GetMessagesAsync(cancellationToken);
+                    messages = await this.QueueManager.GetMessagesAsync(cancellationToken);
                     
                     this.stats.MessagesRead.Increment(messages.Count);
                     this.stats.PendingOrchestratorMessages.Increment(messages.Count);
@@ -522,8 +511,8 @@ namespace DurableTask.CosmosDB
 
             ReceivedMessageContext messageContext =
                 ReceivedMessageContext.CreateFromReceivedMessageBatch(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     nextBatch.Messages);
 
             OrchestrationInstance instance = messageContext.Instance;
@@ -614,8 +603,8 @@ namespace DurableTask.CosmosDB
                         if (existingMessage.Id == data.OriginalQueueMessage.Id)
                         {
                             AnalyticsEventSource.Log.DuplicateMessageDetected(
-                                this.queueManager.StorageName,
-                                this.settings.TaskHubName,
+                                this.QueueManager.StorageName,
+                                this.Settings.TaskHubName,
                                 existingMessage.Id,
                                 existingMessage.DequeueCount);
                             targetBatch.Messages[i] = data;
@@ -655,7 +644,7 @@ namespace DurableTask.CosmosDB
             string expectedExecutionId,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            return new OrchestrationRuntimeState(await this.trackingStore.GetHistoryEventsAsync(instanceId, expectedExecutionId, cancellationToken));
+            return new OrchestrationRuntimeState(await this.TrackingStore.GetHistoryEventsAsync(instanceId, expectedExecutionId, cancellationToken));
         }
 
         /// <inheritdoc />
@@ -673,8 +662,8 @@ namespace DurableTask.CosmosDB
             {
                 // The context doesn't exist - possibly because this is a duplicate message.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     $"Could not find context for orchestration work item with InstanceId = {workItem.InstanceId}.");
                 return;
             }
@@ -684,7 +673,7 @@ namespace DurableTask.CosmosDB
             string instanceId = workItem.InstanceId;
             string executionId = runtimeState.OrchestrationInstance.ExecutionId;
 
-            await this.trackingStore.UpdateStateAsync(runtimeState, instanceId, executionId);
+            await this.TrackingStore.UpdateStateAsync(runtimeState, instanceId, executionId);
 
             bool addedControlMessages = false;
             bool addedWorkItemMessages = false;
@@ -705,7 +694,7 @@ namespace DurableTask.CosmosDB
                     string targetInstanceId = taskMessage.OrchestrationInstance.InstanceId;
                     var targetControlQueue = await this.GetControlQueueAsync(targetInstanceId);
 
-                    enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(targetControlQueue, context, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
+                    enqueueTasks.Add(this.QueueManager.EnqueueMessageAsync(targetControlQueue, context, taskMessage, null, ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions));
                 }
             }
 
@@ -724,7 +713,7 @@ namespace DurableTask.CosmosDB
                         initialVisibilityDelay = TimeSpan.Zero;
                     }
 
-                    enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(currentControlQueue, context, taskMessage, initialVisibilityDelay, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));                    
+                    enqueueTasks.Add(this.QueueManager.EnqueueMessageAsync(currentControlQueue, context, taskMessage, initialVisibilityDelay, ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions));                    
                 }
             }
 
@@ -734,7 +723,7 @@ namespace DurableTask.CosmosDB
                 addedWorkItemMessages = true;
                 foreach (TaskMessage taskMessage in outboundMessages)
                 {
-                    enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(this.queueManager.WorkItemQueue, context, taskMessage, null, ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions));
+                    enqueueTasks.Add(this.QueueManager.EnqueueMessageAsync(this.QueueManager.WorkItemQueue, context, taskMessage, null, ((StorageOrchestrationServiceSettings)this.Settings).WorkItemQueueRequestOptions));
                 }
             }
 
@@ -743,7 +732,7 @@ namespace DurableTask.CosmosDB
                 totalMessageCount++;
                 addedControlMessages = true;
 
-                enqueueTasks.Add(this.queueManager.EnqueueMessageAsync(currentControlQueue, context, continuedAsNewMessage, null, ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions));
+                enqueueTasks.Add(this.QueueManager.EnqueueMessageAsync(currentControlQueue, context, continuedAsNewMessage, null, ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions));
             }
 
             await Task.WhenAll(enqueueTasks);
@@ -774,15 +763,15 @@ namespace DurableTask.CosmosDB
                 var queueMessage = context.MessageDataBatch[i].OriginalQueueMessage;
                 TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
                 AnalyticsEventSource.Log.DeletingMessage(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     taskMessage.Event.EventType.ToString(),
                     queueMessage.Id,
                     context.Instance.InstanceId,
                     context.Instance.ExecutionId);
                 Task deletetask = controlQueue.DeleteMessageAsync(
                     queueMessage,
-                    ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions,
                     context.StorageOperationContext);
 
                 // Handle the case where this message was already deleted.
@@ -819,7 +808,7 @@ namespace DurableTask.CosmosDB
 
             string instanceId = workItem.InstanceId;
             //var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
-            var controlQueue = this.queueManager.GetControlQueue(instanceId);
+            var controlQueue = this.QueueManager.GetControlQueue(instanceId);
 
             // Reset the visibility of the message to ensure it doesn't get picked up by anyone else.
             try
@@ -828,15 +817,15 @@ namespace DurableTask.CosmosDB
                 {
                     Task updateTask = controlQueue.UpdateMessageAsync(
                         e.OriginalQueueMessage,
-                        this.settings.ControlQueueVisibilityTimeout,
+                        this.Settings.ControlQueueVisibilityTimeout,
                         MessageUpdateFields.Visibility,
-                        ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
+                        ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions,
                         context.StorageOperationContext);
 
                     return this.HandleNotFoundException(updateTask, e.OriginalQueueMessage.Id, workItem.InstanceId);
                 }));
 
-                workItem.LockedUntilUtc = DateTime.UtcNow.Add(this.settings.ControlQueueVisibilityTimeout);
+                workItem.LockedUntilUtc = DateTime.UtcNow.Add(this.Settings.ControlQueueVisibilityTimeout);
                 this.stats.MessagesUpdated.Increment(context.MessageDataBatch.Count);
             }
             finally
@@ -857,7 +846,7 @@ namespace DurableTask.CosmosDB
 
             string instanceId = workItem.InstanceId;
             //var controlQueue = await this.queueManager.GetControlQueueAsync(instanceId);
-            var controlQueue = this.queueManager.GetControlQueue(instanceId);
+            var controlQueue = this.QueueManager.GetControlQueue(instanceId);
 
             Task[] updates = new Task[context.MessageDataBatch.Count];
 
@@ -869,8 +858,8 @@ namespace DurableTask.CosmosDB
                 TaskMessage taskMessage = context.MessageDataBatch[i].TaskMessage;
 
                 AnalyticsEventSource.Log.AbandoningMessage(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     taskMessage.Event.EventType.ToString(),
                     queueMessage.Id,
                     taskMessage.OrchestrationInstance.InstanceId,
@@ -880,7 +869,7 @@ namespace DurableTask.CosmosDB
                     queueMessage,
                     TimeSpan.Zero,
                     MessageUpdateFields.Visibility,
-                    ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions,
                     context.StorageOperationContext);
 
                 // Message may have been processed and deleted already.
@@ -922,10 +911,10 @@ namespace DurableTask.CosmosDB
             ReceivedMessageContext context;
             while (true)
             {
-                context = await this.queueManager.GetMessageAsync(
+                context = await this.QueueManager.GetMessageAsync(
                     this.WorkItemQueue,
-                    this.settings.WorkItemQueueVisibilityTimeout,
-                    ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
+                    this.Settings.WorkItemQueueVisibilityTimeout,
+                    ((StorageOrchestrationServiceSettings)this.Settings).WorkItemQueueRequestOptions,
                     null /* operationContext */,
                     cancellationToken);
                 this.stats.StorageRequests.Increment();
@@ -952,8 +941,8 @@ namespace DurableTask.CosmosDB
                 // This means we're already processing this message. This is never expected since the message
                 // should be kept invisible via background calls to RenewTaskActivityWorkItemLockAsync.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     $"Work item queue message with ID = {context.MessageId} is being processed multiple times concurrently.");
                 return null;
             }
@@ -976,8 +965,8 @@ namespace DurableTask.CosmosDB
             {
                 // The context does not exist - possibly because it was already removed.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     $"Could not find context for work item with ID = {workItem.Id}.");
                 return;
             }
@@ -989,12 +978,12 @@ namespace DurableTask.CosmosDB
             // work item message yet (that happens next).
             try
             {
-                await queueManager.AddMessageAsync(
+                await this.QueueManager.AddMessageAsync(
                     controlQueue,
                     responseTaskMessage,
                     null /* timeToLive */,
                     null /* initialVisibilityDelay */,
-                    ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
+                    ((StorageOrchestrationServiceSettings)this.Settings).WorkItemQueueRequestOptions,
                     context.StorageOperationContext
                 );
 
@@ -1013,8 +1002,8 @@ namespace DurableTask.CosmosDB
 
             // Next, delete the work item queue message. This must come after enqueuing the response message.
             AnalyticsEventSource.Log.DeletingMessage(
-                this.queueManager.StorageName,
-                this.settings.TaskHubName,
+                this.QueueManager.StorageName,
+                this.Settings.TaskHubName,
                 workItem.TaskMessage.Event.EventType.ToString(),
                 messageId,
                 instanceId,
@@ -1022,7 +1011,7 @@ namespace DurableTask.CosmosDB
 
             Task deleteTask = this.WorkItemQueue.DeleteMessageAsync(
                 context.MessageData.OriginalQueueMessage,
-                ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.Settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
 
             try
@@ -1058,9 +1047,9 @@ namespace DurableTask.CosmosDB
             // Reset the visibility of the message to ensure it doesn't get picked up by anyone else.
             Task renewTask = this.WorkItemQueue.UpdateMessageAsync(
                 context.MessageData.OriginalQueueMessage,
-                this.settings.WorkItemQueueVisibilityTimeout,
+                this.Settings.WorkItemQueueVisibilityTimeout,
                 MessageUpdateFields.Visibility,
-                ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.Settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
 
             try
@@ -1072,7 +1061,7 @@ namespace DurableTask.CosmosDB
                 this.stats.StorageRequests.Increment();
             }
 
-            workItem.LockedUntilUtc = DateTime.UtcNow.Add(this.settings.WorkItemQueueVisibilityTimeout);
+            workItem.LockedUntilUtc = DateTime.UtcNow.Add(this.Settings.WorkItemQueueVisibilityTimeout);
             this.stats.MessagesUpdated.Increment();
 
             return workItem;
@@ -1092,8 +1081,8 @@ namespace DurableTask.CosmosDB
             {
                 // The context does not exist - possibly because it was already removed.
                 AnalyticsEventSource.Log.AssertFailure(
-                    this.queueManager.StorageName,
-                    this.settings.TaskHubName,
+                    this.QueueManager.StorageName,
+                    this.Settings.TaskHubName,
                     $"Could not find context for work item with ID = {workItem.Id}.");
                 return;
             }
@@ -1102,8 +1091,8 @@ namespace DurableTask.CosmosDB
             string instanceId = workItem.TaskMessage.OrchestrationInstance.InstanceId;
 
             AnalyticsEventSource.Log.AbandoningMessage(
-                this.queueManager.StorageName,
-                this.settings.TaskHubName,
+                this.QueueManager.StorageName,
+                this.Settings.TaskHubName,
                 workItem.TaskMessage.Event.EventType.ToString(),
                 messageId,
                 instanceId,
@@ -1114,7 +1103,7 @@ namespace DurableTask.CosmosDB
                 context.MessageData.OriginalQueueMessage,
                 TimeSpan.Zero,
                 MessageUpdateFields.Visibility,
-                ((StorageOrchestrationServiceSettings)this.settings).WorkItemQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.Settings).WorkItemQueueRequestOptions,
                 context.StorageOperationContext);
 
             try
@@ -1141,8 +1130,8 @@ namespace DurableTask.CosmosDB
                 {
                     // Message may have been processed and deleted already.
                     AnalyticsEventSource.Log.MessageGone(
-                        this.queueManager.StorageName,
-                        this.settings.TaskHubName,
+                        this.QueueManager.StorageName,
+                        this.Settings.TaskHubName,
                         messageId,
                         instanceId,
                         nameof(AbandonTaskOrchestrationWorkItemAsync));
@@ -1160,7 +1149,7 @@ namespace DurableTask.CosmosDB
         public bool IsMaxMessageCountExceeded(int currentMessageCount, OrchestrationRuntimeState runtimeState)
         {
             // This orchestration service implementation will manage batch sizes by itself.
-            // We don't want to rely on the underlying framework's backoff mechanism because
+            // We don't want to rely on the underlying framework's back off mechanism because
             // it would require us to implement some kind of duplicate message detection.
             return false;
         }
@@ -1221,18 +1210,18 @@ namespace DurableTask.CosmosDB
                 return;
             }
 
-            await this.trackingStore.SetNewExecutionAsync(executionStartedEvent);
+            await this.TrackingStore.SetNewExecutionAsync(executionStartedEvent);
 
         }
 
         async Task SendTaskOrchestrationMessageInternalAsync(IQueue controlQueue, TaskMessage message)
         {
-            await this.queueManager.AddMessageAsync(
+            await this.QueueManager.AddMessageAsync(
                 controlQueue, 
                 message,                 
                 null /* timeToLive */,
                 null /* initialVisibilityDelay */,
-                ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
+                ((StorageOrchestrationServiceSettings)this.Settings).ControlQueueRequestOptions,
                 null /* operationContext */
                 );
 
@@ -1255,7 +1244,7 @@ namespace DurableTask.CosmosDB
         {
             // Client operations will auto-create the task hub if it doesn't already exist.
             await this.EnsuredCreatedIfNotExistsAsync();
-            return await this.trackingStore.GetStateAsync(instanceId, allExecutions);
+            return await this.TrackingStore.GetStateAsync(instanceId, allExecutions);
         }
 
         /// <summary>
@@ -1268,7 +1257,7 @@ namespace DurableTask.CosmosDB
         {
             // Client operations will auto-create the task hub if it doesn't already exist.
             await this.EnsuredCreatedIfNotExistsAsync();
-            return await this.trackingStore.GetStateAsync(instanceId, executionId);
+            return await this.TrackingStore.GetStateAsync(instanceId, executionId);
         }
 
 
@@ -1350,7 +1339,7 @@ namespace DurableTask.CosmosDB
         /// <param name="timeRangeFilterType">What to compare the threshold date time against</param>
         public Task PurgeOrchestrationHistoryAsync(DateTime thresholdDateTimeUtc, OrchestrationStateTimeRangeFilterType timeRangeFilterType)
         {
-            return this.trackingStore.PurgeHistoryAsync(thresholdDateTimeUtc, timeRangeFilterType);
+            return this.TrackingStore.PurgeHistoryAsync(thresholdDateTimeUtc, timeRangeFilterType);
         }
 
         #endregion
@@ -1359,12 +1348,12 @@ namespace DurableTask.CosmosDB
         //       be supported: https://github.com/Azure/azure-functions-durable-extension/issues/1
         async Task<IQueue> GetControlQueueAsync(string instanceId)
         {
-            uint partitionIndex = Fnv1aHashHelper.ComputeHash(instanceId) % (uint)this.settings.PartitionCount;
-            var controlQueue = this.queueManager.GetControlQueue(Utils.GetControlQueueId(settings.TaskHubName, (int)partitionIndex));
+            uint partitionIndex = Fnv1aHashHelper.ComputeHash(instanceId) % (uint)this.Settings.PartitionCount;
+            IQueue controlQueue = this.QueueManager.GetControlQueue(Utils.GetControlQueueId(this.Settings.TaskHubName, (int)partitionIndex));
 
             IQueue cachedQueue;
-            if (this.queueManager.OwnedControlQueues.TryGetValue(controlQueue.Name, out cachedQueue) ||
-                this.queueManager.AllControlQueues.TryGetValue(controlQueue.Name, out cachedQueue))
+            if (this.QueueManager.OwnedControlQueues.TryGetValue(controlQueue.Name, out cachedQueue) ||
+                this.QueueManager.AllControlQueues.TryGetValue(controlQueue.Name, out cachedQueue))
             {
                 return cachedQueue;
             }
@@ -1379,7 +1368,7 @@ namespace DurableTask.CosmosDB
                     this.stats.StorageRequests.Increment();
                 }
 
-                this.queueManager.AllControlQueues.TryAdd(controlQueue.Name, controlQueue);
+                this.QueueManager.AllControlQueues.TryAdd(controlQueue.Name, controlQueue);
                 return controlQueue;
             }
         }

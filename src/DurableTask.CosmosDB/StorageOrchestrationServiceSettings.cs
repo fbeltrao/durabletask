@@ -77,15 +77,15 @@ namespace DurableTask.CosmosDB
         public TimeSpan LeaseInterval { get; set; } = TimeSpan.FromSeconds(30);
 
         /// <inheritdoc />
-        public string CosmosDBEndpoint { get; set; }
+        public string CosmosDbEndpoint { get; set; }
 
         /// <inheritdoc />
-        public string CosmosDBAuthKey { get; set; }
+        public string CosmosDbAuthKey { get; set; }
 
         /// <inheritdoc />
-        public string CosmosDBLeaseManagementCollection { get; set; }
+        public string CosmosDbLeaseManagementCollection { get; set; }
 
         /// <inheritdoc />
-        public string CosmosDBName { get; set; } = "durabletask";
+        public string CosmosDbName { get; set; } = "durabletask";
     }
 }

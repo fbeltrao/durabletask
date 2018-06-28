@@ -86,7 +86,7 @@ namespace DurableTask.CosmosDB
             {
                 foreach (PropertyConverter propertyConverter in propertyConverters)
                 {
-                    var entityValue = tableEntity[propertyConverter.PropertyName];
+                    JToken entityValue = tableEntity[propertyConverter.PropertyName];
                     if (entityValue.Type == JTokenType.Integer)
                     {
                         propertyConverter.SetObjectProperty(createdObject, new EntityProperty(tableEntity[propertyConverter.PropertyName].Value<int>()));

@@ -60,10 +60,10 @@ namespace DurableTask.CosmosDB.Tracking
             //If no execution Id is provided get the latest executionId by getting the latest state
             if (expectedExecutionId == null)
             {
-                expectedExecutionId = (await instanceStore.GetOrchestrationStateAsync(instanceId, false)).FirstOrDefault()?.State.OrchestrationInstance.ExecutionId;
+                expectedExecutionId = (await this.instanceStore.GetOrchestrationStateAsync(instanceId, false)).FirstOrDefault()?.State.OrchestrationInstance.ExecutionId;
             }
 
-            var events = await instanceStore.GetOrchestrationHistoryEventsAsync(instanceId, expectedExecutionId);
+            var events = await this.instanceStore.GetOrchestrationHistoryEventsAsync(instanceId, expectedExecutionId);
 
             if (events == null || !events.Any())
             {
@@ -78,7 +78,7 @@ namespace DurableTask.CosmosDB.Tracking
         /// <inheritdoc />
         public override async Task<IList<OrchestrationState>> GetStateAsync(string instanceId, bool allExecutions)
         {
-            IEnumerable<OrchestrationStateInstanceEntity> states = await instanceStore.GetOrchestrationStateAsync(instanceId, allExecutions);
+            IEnumerable<OrchestrationStateInstanceEntity> states = await this.instanceStore.GetOrchestrationStateAsync(instanceId, allExecutions);
             return states?.Select(s => s.State).ToList() ?? new List<OrchestrationState>();
         }
 
@@ -91,14 +91,14 @@ namespace DurableTask.CosmosDB.Tracking
             }
             else
             {
-                return (await instanceStore.GetOrchestrationStateAsync(instanceId, executionId))?.State;
+                return (await this.instanceStore.GetOrchestrationStateAsync(instanceId, executionId))?.State;
             }
         }
 
         /// <inheritdoc />
         public override Task PurgeHistoryAsync(DateTime thresholdDateTimeUtc, OrchestrationStateTimeRangeFilterType timeRangeFilterType)
         {
-            return instanceStore.PurgeOrchestrationHistoryEventsAsync(thresholdDateTimeUtc, timeRangeFilterType);
+            return this.instanceStore.PurgeOrchestrationHistoryEventsAsync(thresholdDateTimeUtc, timeRangeFilterType);
         }
 
         /// <inheritdoc />
@@ -137,20 +137,16 @@ namespace DurableTask.CosmosDB.Tracking
         public override async Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
         {
             int oldEventsCount = (runtimeState.Events.Count - runtimeState.NewEvents.Count);
-            await instanceStore.WriteEntitiesAsync(runtimeState.NewEvents.Select((x, i) =>
+            await this.instanceStore.WriteEntitiesAsync(runtimeState.NewEvents.Select((x, i) => new OrchestrationWorkItemInstanceEntity()
             {
-                return new OrchestrationWorkItemInstanceEntity()
-                {
-                    HistoryEvent = x,
-                    ExecutionId = executionId,
-                    InstanceId = instanceId,
-                    SequenceNumber = i + oldEventsCount,
-                    EventTimestamp = x.Timestamp
-                };
-
+                HistoryEvent = x,
+                ExecutionId = executionId,
+                InstanceId = instanceId,
+                SequenceNumber = i + oldEventsCount,
+                EventTimestamp = x.Timestamp
             }));
 
-            await instanceStore.WriteEntitiesAsync(new InstanceEntityBase[]
+            await this.instanceStore.WriteEntitiesAsync(new InstanceEntityBase[]
             {
                     new OrchestrationStateInstanceEntity()
                     {

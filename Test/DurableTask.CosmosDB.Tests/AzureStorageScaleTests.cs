@@ -28,7 +28,6 @@ namespace DurableTask.CosmosDB.Tests
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Blob;
-    using Microsoft.WindowsAzure.Storage.Queue;
     using Microsoft.WindowsAzure.Storage.Table;
 
     /// <summary>
@@ -90,8 +89,8 @@ namespace DurableTask.CosmosDB.Tests
                 TaskHubName = taskHubName,
                 StorageConnectionString = storageConnectionString,
                 WorkerId = workerId,
-                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
-                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
+                CosmosDbAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                CosmosDbEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
             };
 
             Trace.TraceInformation($"Task Hub name: {taskHubName}");
@@ -192,9 +191,9 @@ namespace DurableTask.CosmosDB.Tests
                 TaskHubName = taskHubName,
                 StorageConnectionString = storageConnectionString,
                 WorkerId = workerId,
-                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
-                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
-                CosmosDBLeaseManagementCollection = $"{testName}Lease"
+                CosmosDbAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                CosmosDbEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
+                CosmosDbLeaseManagementCollection = $"{testName}Lease"
             };
 
             Trace.TraceInformation($"Task Hub name: {taskHubName}");
@@ -508,8 +507,8 @@ namespace DurableTask.CosmosDB.Tests
                 StorageConnectionString = TestHelpers.GetTestStorageAccountConnectionString(),
                 TaskHubName = nameof(MonitorIdleTaskHubDisconnected),
                 PartitionCount = 4,
-                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
-                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
+                CosmosDbAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
+                CosmosDbEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint")
             };
 
             var service = new ExtensibleOrchestrationService(settings);

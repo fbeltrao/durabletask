@@ -19,9 +19,9 @@ namespace DurableTask.CosmosDB
     using System.Diagnostics;
     using System.Linq;
     using System.Reflection;
-    using System.Text;
     using System.Threading.Tasks;
     using DurableTask.Core;
+    using DurableTask.CosmosDB.Queue;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Queue;
 
@@ -43,13 +43,12 @@ namespace DurableTask.CosmosDB
         readonly Guid traceActivityId;
         readonly MessageData messageData;
         readonly List<MessageData> messageDataBatch;
-        readonly OperationContext storageOperationContext;
 
         static ReceivedMessageContext()
         {
             // All requests to storage will contain the assembly name and version in the User-Agent header.
             Assembly currentAssembly = typeof(ReceivedMessageContext).Assembly;
-            var fileInfo = FileVersionInfo.GetVersionInfo(currentAssembly.Location);
+            FileVersionInfo fileInfo = FileVersionInfo.GetVersionInfo(currentAssembly.Location);
             var assemblyFileVersion = new Version(
                 fileInfo.FileMajorPart,
                 fileInfo.FileMinorPart,
@@ -69,8 +68,8 @@ namespace DurableTask.CosmosDB
             this.traceActivityId = traceActivityId;
             this.messageData = message ?? throw new ArgumentNullException(nameof(message));
 
-            this.storageOperationContext = new OperationContext();
-            this.storageOperationContext.ClientRequestID = traceActivityId.ToString();
+            this.StorageOperationContext = new OperationContext();
+            this.StorageOperationContext.ClientRequestID = traceActivityId.ToString();
         }
 
         ReceivedMessageContext(string storageAccountName, string taskHub, Guid traceActivityId, List<MessageData> messageBatch)
@@ -80,39 +79,17 @@ namespace DurableTask.CosmosDB
             this.traceActivityId = traceActivityId;
             this.messageDataBatch = messageBatch ?? throw new ArgumentNullException(nameof(messageBatch));
 
-            this.storageOperationContext = new OperationContext();
-            this.storageOperationContext.ClientRequestID = traceActivityId.ToString();
+            this.StorageOperationContext = new OperationContext();
+            this.StorageOperationContext.ClientRequestID = traceActivityId.ToString();
         }
 
-        public MessageData MessageData
-        {
-            get { return this.messageData; }
-        }
+        public MessageData MessageData => this.messageData;
 
-        public IReadOnlyList<MessageData> MessageDataBatch
-        {
-            get { return this.messageDataBatch; }
-        }
+        public IReadOnlyList<MessageData> MessageDataBatch => this.messageDataBatch;
 
-        public OrchestrationInstance Instance
-        {
-            get
-            {
-                if (this.messageData != null)
-                {
-                    return this.messageData.TaskMessage.OrchestrationInstance;
-                }
-                else
-                {
-                    return this.messageDataBatch[0].TaskMessage.OrchestrationInstance;
-                }
-            }
-        }
+        public OrchestrationInstance Instance => this.messageData != null ? this.messageData.TaskMessage.OrchestrationInstance : this.messageDataBatch[0].TaskMessage.OrchestrationInstance;
 
-        public OperationContext StorageOperationContext
-        {
-            get { return this.storageOperationContext; }
-        }
+        public OperationContext StorageOperationContext { get; }
 
         public static ReceivedMessageContext CreateFromReceivedMessageBatch(string storageAccountName, string taskHub, List<MessageData> batch)
         {
@@ -159,9 +136,6 @@ namespace DurableTask.CosmosDB
 
             return new ReceivedMessageContext(queueMessageId, storageAccountName, taskHub, newTraceActivityId, data);
         }
-
-
-
         static Guid StartNewLogicalTraceScope()
         {
             // This call sets the activity trace ID both on the current thread context
@@ -175,7 +149,7 @@ namespace DurableTask.CosmosDB
         static void TraceMessageReceived(string storageAccountName, string taskHub, MessageData data)
         {
             TaskMessage taskMessage = data.TaskMessage;
-            var queueMessage = data.OriginalQueueMessage;
+            IQueueMessage queueMessage = data.OriginalQueueMessage;
 
             AnalyticsEventSource.Log.ReceivedMessage(
                 data.ActivityId,
@@ -202,8 +176,6 @@ namespace DurableTask.CosmosDB
                 return this.messageDataBatch.Min(msg => msg.OriginalQueueMessage.NextVisibleTime.Value.UtcDateTime);
             }
         }
-
-        
 
         public bool TrySave(object relatedObject)
         {

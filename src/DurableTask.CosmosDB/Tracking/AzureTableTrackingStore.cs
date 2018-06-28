@@ -31,17 +31,13 @@ namespace DurableTask.CosmosDB.Tracking
     using Microsoft.WindowsAzure.Storage.Table;
 
     /// <summary>
-    /// Tracking strore for use with the AzureStorageOrxhestration Service. Uses azure table and blob storage to store runtime state.
+    /// Tracking store for use with the AzureStorageOrxhestration Service. Uses azure table and blob storage to store runtime state.
     /// </summary>
     class AzureTableTrackingStore : TrackingStoreBase
     {
 
         readonly string storageAccountName;
         readonly string taskHubName;
-
-        readonly CloudTable historyTable;
-
-        readonly CloudTable instancesTable;
 
         readonly AzureStorageOrchestrationServiceStats stats;
 
@@ -76,9 +72,9 @@ namespace DurableTask.CosmosDB.Tracking
             string instancesTableName = $"{taskHubName}Instances";
             NameValidator.ValidateTableName(instancesTableName);
 
-            this.historyTable = tableClient.GetTableReference(historyTableName);
+            this.HistoryTable = tableClient.GetTableReference(historyTableName);
 
-            this.instancesTable = tableClient.GetTableReference(instancesTableName);
+            this.InstancesTable = tableClient.GetTableReference(instancesTableName);
 
             this.StorageTableRequestOptions = storageTableRequestOptions;
 
@@ -99,17 +95,17 @@ namespace DurableTask.CosmosDB.Tracking
         /// </summary>
         public TableRequestOptions StorageTableRequestOptions { get; set; }
 
-        internal CloudTable HistoryTable => this.historyTable;
+        internal CloudTable HistoryTable { get; }
 
-        internal CloudTable InstancesTable => this.instancesTable;
+        internal CloudTable InstancesTable { get; }
 
         /// <inheritdoc />
         public override Task CreateAsync()
         {
             return Task.WhenAll(new Task[]
                 {
-                    this.historyTable.CreateIfNotExistsAsync(),
-                    this.instancesTable.CreateIfNotExistsAsync()
+                    this.HistoryTable.CreateIfNotExistsAsync(),
+                    this.InstancesTable.CreateIfNotExistsAsync()
                 });
         }
 
@@ -118,19 +114,19 @@ namespace DurableTask.CosmosDB.Tracking
         {
             return Task.WhenAll(new Task[]
                 {
-                    this.historyTable.DeleteIfExistsAsync(),
-                    this.instancesTable.DeleteIfExistsAsync()
+                    this.HistoryTable.DeleteIfExistsAsync(),
+                    this.InstancesTable.DeleteIfExistsAsync()
                 });
         }
 
         /// <inheritdoc />
-        public async override Task<bool> ExistsAsync()
+        public override async Task<bool> ExistsAsync()
         {
-            return this.historyTable != null && this.instancesTable != null && await this.historyTable.ExistsAsync() && await this.instancesTable.ExistsAsync();
+            return this.HistoryTable != null && this.InstancesTable != null && await this.HistoryTable.ExistsAsync() && await this.InstancesTable.ExistsAsync();
         }
 
         /// <inheritdoc />
-        public async override Task<IList<HistoryEvent>> GetHistoryEventsAsync(string instanceId, string expectedExecutionId, CancellationToken cancellationToken = default(CancellationToken))
+        public override async Task<IList<HistoryEvent>> GetHistoryEventsAsync(string instanceId, string expectedExecutionId, CancellationToken cancellationToken = default(CancellationToken))
         {
             var filterCondition = new StringBuilder(200);
 
@@ -153,13 +149,12 @@ namespace DurableTask.CosmosDB.Tracking
             var stopwatch = new Stopwatch();
             int requestCount = 0;
 
-            bool finishedEarly = false;
             TableContinuationToken continuationToken = null;
             while (true)
             {
                 requestCount++;
                 stopwatch.Start();
-                var segment = await this.historyTable.ExecuteQuerySegmentedAsync(
+                var segment = await this.HistoryTable.ExecuteQuerySegmentedAsync(
                     query,
                     continuationToken,
                     this.StorageTableRequestOptions,
@@ -173,7 +168,7 @@ namespace DurableTask.CosmosDB.Tracking
                 this.stats.TableEntitiesRead.Increment(historyEventEntities.Count - previousCount);
 
                 continuationToken = segment.ContinuationToken;
-                if (finishedEarly || continuationToken == null || cancellationToken.IsCancellationRequested)
+                if (continuationToken == null || cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
@@ -322,7 +317,7 @@ namespace DurableTask.CosmosDB.Tracking
             await this.CompressLargeMessageAsync(entity);
 
             Stopwatch stopwatch = Stopwatch.StartNew();
-            await this.instancesTable.ExecuteAsync(
+            await this.InstancesTable.ExecuteAsync(
                 TableOperation.InsertOrReplace(entity));
             this.stats.StorageRequests.Increment();
             this.stats.TableEntitiesWritten.Increment(1);
@@ -339,8 +334,8 @@ namespace DurableTask.CosmosDB.Tracking
         /// <inheritdoc />
         public override Task StartAsync()
         {
-            ServicePointManager.FindServicePoint(this.historyTable.Uri).UseNagleAlgorithm = false;
-            ServicePointManager.FindServicePoint(this.instancesTable.Uri).UseNagleAlgorithm = false;
+            ServicePointManager.FindServicePoint(this.HistoryTable.Uri).UseNagleAlgorithm = false;
+            ServicePointManager.FindServicePoint(this.InstancesTable.Uri).UseNagleAlgorithm = false;
             return Utils.CompletedTask;
         }
 
@@ -435,7 +430,7 @@ namespace DurableTask.CosmosDB.Tracking
 
             Stopwatch orchestrationInstanceUpdateStopwatch = Stopwatch.StartNew();
             
-            await this.instancesTable.ExecuteAsync(TableOperation.InsertOrMerge(orchestrationInstanceUpdate));
+            await this.InstancesTable.ExecuteAsync(TableOperation.InsertOrMerge(orchestrationInstanceUpdate));
 
             this.stats.StorageRequests.Increment();
             this.stats.TableEntitiesWritten.Increment();
@@ -586,7 +581,7 @@ namespace DurableTask.CosmosDB.Tracking
             int numberOfTotalEvents)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
-            await this.historyTable.ExecuteBatchAsync(
+            await this.HistoryTable.ExecuteBatchAsync(
                 historyEventBatch,
                 this.StorageTableRequestOptions,
                 null);

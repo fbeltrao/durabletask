@@ -129,11 +129,7 @@ namespace DurableTask.CosmosDB
         /// </summary>
         public override string ToString()
         {
-            return string.Format(
-                "BucketCount: {0}, AvailableBytes: {1}, AllocatedBytes: {2}.",
-                this.BucketCount,
-                this.AvailableBytes,
-                this.AllocatedBytes);
+            return $"BucketCount: {this.BucketCount}, AvailableBytes: {this.AvailableBytes}, AllocatedBytes: {this.AllocatedBytes}.";
         }
     }
 }

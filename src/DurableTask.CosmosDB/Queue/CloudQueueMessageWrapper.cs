@@ -20,13 +20,13 @@ namespace DurableTask.CosmosDB.Queue
     {
         internal CloudQueueMessage CloudQueueMessage { get; }
 
-        public DateTimeOffset? InsertionTime => CloudQueueMessage.InsertionTime;
+        public DateTimeOffset? InsertionTime => this.CloudQueueMessage.InsertionTime;
 
-        public string Id => CloudQueueMessage.Id;
+        public string Id => this.CloudQueueMessage.Id;
 
-        public int DequeueCount => CloudQueueMessage.DequeueCount;
+        public int DequeueCount => this.CloudQueueMessage.DequeueCount;
 
-        public DateTimeOffset? NextVisibleTime => CloudQueueMessage.NextVisibleTime;
+        public DateTimeOffset? NextVisibleTime => this.CloudQueueMessage.NextVisibleTime;
 
         public string AsString()
         {
@@ -35,9 +35,7 @@ namespace DurableTask.CosmosDB.Queue
 
         internal CloudQueueMessageWrapper(CloudQueueMessage cloudQueueMessage)
         {
-            CloudQueueMessage = cloudQueueMessage;
+            this.CloudQueueMessage = cloudQueueMessage;
         }
-
-        
     }
 }

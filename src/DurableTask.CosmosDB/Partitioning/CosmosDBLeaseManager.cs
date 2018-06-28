@@ -18,13 +18,12 @@ using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using DurableTask.CosmosDB.Monitoring;
-using DurableTask.CosmosDB.Partitioning;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents.Linq;
 using Newtonsoft.Json;
 
-namespace DurableTask.CosmosDB
+namespace DurableTask.CosmosDB.Partitioning
 {
     using DurableTask.CosmosDB.Collection;
 

@@ -34,9 +34,8 @@ namespace DurableTask.CosmosDB.Queue
     {
         private readonly IExtensibleOrchestrationServiceSettings settings;
         private readonly AzureStorageOrchestrationServiceStats stats;
-        ConcurrentDictionary<string, IQueue> allControlQueues;
-        ConcurrentDictionary<string, IQueue> ownedControlQueues;
-        IQueue workItemQueue;
+        readonly ConcurrentDictionary<string, IQueue> allControlQueues;
+        readonly ConcurrentDictionary<string, IQueue> ownedControlQueues;
 
         /// <summary>
         /// Constructor
@@ -51,26 +50,26 @@ namespace DurableTask.CosmosDB.Queue
             this.allControlQueues = new ConcurrentDictionary<string, IQueue>();
             this.ownedControlQueues = new ConcurrentDictionary<string, IQueue>();
 
-            var workItemQueueName = $"{this.settings.TaskHubName.ToLowerInvariant()}-workitems";
-            this.workItemQueue = GetQueue(workItemQueueName);
+            string workItemQueueName = $"{this.settings.TaskHubName.ToLowerInvariant()}-workitems";
+            this.WorkItemQueue = GetQueue(workItemQueueName);
 
             for (int i = 0; i < this.settings.PartitionCount; i++)
             {
-                var queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i));
+                CosmosDBQueue queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i));
                 this.allControlQueues.TryAdd(queue.Name, queue);
             }
         }
 
         CosmosDBQueue GetQueue(string name)
         {
-            var queueSettings = new CosmosDBQueueSettings
+            var queueSettings = new CosmosDbQueueSettings
             {
                 QueueCollectionDefinition = new CosmosDBCollectionDefinition
                 {
                     CollectionName = "queue",
-                    DbName = this.settings.CosmosDBName,
-                    Endpoint = this.settings.CosmosDBEndpoint,
-                    SecretKey = this.settings.CosmosDBAuthKey,
+                    DbName = this.settings.CosmosDbName,
+                    Endpoint = this.settings.CosmosDbEndpoint,
+                    SecretKey = this.settings.CosmosDbAuthKey,
                 }
             };
 
@@ -85,10 +84,10 @@ namespace DurableTask.CosmosDB.Queue
         public ConcurrentDictionary<string, IQueue> OwnedControlQueues => ownedControlQueues;
 
         /// <inheritdoc />
-        public IQueue WorkItemQueue => workItemQueue;
+        public IQueue WorkItemQueue { get; }
 
         /// <inheritdoc />
-        public string StorageName => this.settings.CosmosDBEndpoint;
+        public string StorageName => this.settings.CosmosDbEndpoint;
 
         /// <inheritdoc />
         public async Task AddMessageAsync(IQueue queue, TaskMessage message, TimeSpan? timeToLive, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions, OperationContext operationContext)
@@ -100,7 +99,7 @@ namespace DurableTask.CosmosDB.Queue
 
             var data = new MessageData(message, outboundTraceActivityId, queue.Name);
 
-            var msg = new CosmosDBQueueMessage
+            var msg = new CosmosDbQueueMessage
             {
                 Data = data,
             };
@@ -130,7 +129,7 @@ namespace DurableTask.CosmosDB.Queue
                 }
             }
 
-            await this.workItemQueue.DeleteIfExistsAsync();
+            await this.WorkItemQueue.DeleteIfExistsAsync();
         }
 
         /// <inheritdoc />
@@ -140,7 +139,7 @@ namespace DurableTask.CosmosDB.Queue
 
             Guid outboundTraceActivityId = Guid.NewGuid();
             var data = new MessageData(taskMessage, outboundTraceActivityId, queue.Name);
-            var msg = new CosmosDBQueueMessage
+            var msg = new CosmosDbQueueMessage
             {
                 Data = data,
             };         
@@ -156,7 +155,7 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public IQueue GetControlQueue(string id)
         {
-            return GetQueue(id);
+            return this.GetQueue(id);
         }
 
         /// <inheritdoc />
@@ -167,7 +166,7 @@ namespace DurableTask.CosmosDB.Queue
 
             for (int i = 0; i < this.settings.PartitionCount; i++)
             {
-                var queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i));
+                CosmosDBQueue queue = this.GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i));
                 controlQueues[i] = queue;
             }
 
@@ -178,7 +177,7 @@ namespace DurableTask.CosmosDB.Queue
         public async Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
             var wq = (CosmosDBQueue)queue;
-            var queueMessage = ((CosmosDBQueueMessage)await wq.GetMessageAsync(
+            var queueMessage = ((CosmosDbQueueMessage)await wq.GetMessageAsync(
                     queueVisibilityTimeout,
                     requestOptions,
                     operationContext,
@@ -205,7 +204,7 @@ namespace DurableTask.CosmosDB.Queue
             await this.ownedControlQueues.Values.ParallelForEachAsync(
                 async delegate (IQueue controlQueue)
                 {
-                    var batch = await controlQueue.GetMessagesAsync(
+                    IEnumerable<IQueueMessage> batch = await controlQueue.GetMessagesAsync(
                         this.settings.ControlQueueBatchSize,
                         this.settings.ControlQueueVisibilityTimeout,
                         ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
@@ -216,7 +215,7 @@ namespace DurableTask.CosmosDB.Queue
 
                     if (batch != null)
                     {
-                        var incomingMessages = batch.Select(x => (MessageData)((CosmosDBQueueMessage)x).Data);
+                        IEnumerable<MessageData> incomingMessages = batch.Select(x => (MessageData)((CosmosDbQueueMessage)x).Data);
 
                         lock (messages)
                         {
@@ -231,9 +230,9 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task StartAsync()
         {
-            await this.workItemQueue.CreateIfNotExistsAsync();
+            await this.WorkItemQueue.CreateIfNotExistsAsync();
 
-            foreach (var queue in this.allControlQueues.Values)
+            foreach (IQueue queue in this.allControlQueues.Values)
                 await queue.CreateIfNotExistsAsync();
         }
     }

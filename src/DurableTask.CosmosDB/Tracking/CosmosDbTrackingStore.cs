@@ -34,9 +34,9 @@ namespace DurableTask.CosmosDB.Tracking
     class CosmosDbTrackingStore : TrackingStoreBase, IDisposable
     {
         readonly DocumentClient documentClient;
-        string instancesCollectionName;
-        string historyCollectionName;
-        string DatabaseName;
+        readonly string instancesCollectionName;
+        readonly string historyCollectionName;
+        readonly string DatabaseName;
         readonly IReadOnlyDictionary<EventType, Type> eventTypeMap;
 
         public Microsoft.WindowsAzure.Storage.Table.CloudTable HistoryTable { get; internal set; }
@@ -72,8 +72,8 @@ namespace DurableTask.CosmosDB.Tracking
 
             instanceCollection.PartitionKey.Paths.Add("/instanceId");
 
-            await documentClient.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseName),
+            await this.documentClient.CreateDocumentCollectionIfNotExistsAsync(
+                UriFactory.CreateDatabaseUri(this.DatabaseName),
                 instanceCollection,
                 new RequestOptions { OfferThroughput = 10000 });
 
@@ -85,8 +85,8 @@ namespace DurableTask.CosmosDB.Tracking
 
             historyCollection.PartitionKey.Paths.Add("/instanceId");
 
-            await documentClient.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseName),
+            await this.documentClient.CreateDocumentCollectionIfNotExistsAsync(
+                UriFactory.CreateDatabaseUri(this.DatabaseName),
                 historyCollection,
                 new RequestOptions { OfferThroughput = 10000 });
 
@@ -94,26 +94,16 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override Task DeleteAsync()
         {
-            //try
-            //{
-            //    await this.documentClient.DeleteDocumentCollectionAsync(this.historyCollectionName);
-            //    await this.documentClient.DeleteDocumentCollectionAsync(this.instancesCollectionName);
-            //}
-            //catch (Exception)
-            //{
-
-            //}
-
             return Task.FromResult(0);
         }
 
         public override async Task<bool> ExistsAsync()
         {
             bool result = false;
-            var instanceCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            var historyCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
-            var instanceCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(instanceCollection);
-            var historyCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(historyCollection);
+            Uri instanceCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
+            Uri historyCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
+            ResourceResponse<DocumentCollection> instanceCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(instanceCollection);
+            ResourceResponse<DocumentCollection> historyCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(historyCollection);
             result = instanceCollectionValue.Resource != null && historyCollectionValue.Resource != null;
             return result;
         }
@@ -130,7 +120,7 @@ namespace DurableTask.CosmosDB.Tracking
             }
             else if (documentHistory != null && string.IsNullOrEmpty(expectedExecutionId))
             {
-                foreach (var historyItem in documentHistory.History.Last().Value)
+                foreach (JObject historyItem in documentHistory.History.Last().Value)
                 {
                     result.Add((HistoryEvent)converter.ConvertFromTableEntity(historyItem, GetTypeForJsonObject));
                 }
@@ -138,7 +128,7 @@ namespace DurableTask.CosmosDB.Tracking
 
             if (list != null)
             {
-                foreach (var item in list)
+                foreach (JObject item in list)
                 {
                     result.Add((HistoryEvent)converter.ConvertFromTableEntity(item, GetTypeForJsonObject));
                 }
@@ -176,7 +166,7 @@ namespace DurableTask.CosmosDB.Tracking
 
             OrchestrationState result = null;
 
-            OrchestrationStateDocument document = await GetDocumentStateAsync(instanceId);
+            OrchestrationStateDocument document = await this.GetDocumentStateAsync(instanceId);
             if (document != null && !string.IsNullOrEmpty(executionId) && document.Executions.ContainsKey(executionId))
             {
                 result = document.Executions[executionId];
@@ -194,15 +184,15 @@ namespace DurableTask.CosmosDB.Tracking
         {
             OrchestrationStateDocument result = null;
 
-            var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
+            Uri collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
+            IDocumentQuery<OrchestrationStateDocument> query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
             {
                 PartitionKey = new PartitionKey(instanceId)
 
             })
                 .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
 
-            var list = await query.ExecuteNextAsync<OrchestrationStateDocument>();
+            FeedResponse<OrchestrationStateDocument> list = await query.ExecuteNextAsync<OrchestrationStateDocument>();
 
             if (list != null && list.Count > 0)
             {
@@ -219,15 +209,15 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task SetNewExecutionAsync(ExecutionStartedEvent executionStartedEvent)
         {
-            OrchestrationStateDocument value = await GetDocumentStateAsync(executionStartedEvent.OrchestrationInstance.InstanceId);
+            OrchestrationStateDocument value = await this.GetDocumentStateAsync(executionStartedEvent.OrchestrationInstance.InstanceId);
             if (value == null)
             {
-                value = new OrchestrationStateDocument()
+                value = new OrchestrationStateDocument
                 {
                     InstanceId = executionStartedEvent.OrchestrationInstance.InstanceId,
+                    Executions = new Dictionary<string, OrchestrationState>(),
                 };
 
-                value.Executions = new Dictionary<string, OrchestrationState>();
             }
             
             value.Executions.Add(executionStartedEvent.OrchestrationInstance.ExecutionId, new OrchestrationState()
@@ -247,13 +237,13 @@ namespace DurableTask.CosmosDB.Tracking
             });
 
             value.SetPropertyValue("executions", value.Executions);
-            await UpsertOrchestrationState(value);
+            await this.UpsertOrchestrationState(value);
         }
 
         private async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument value)
         {
-            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            return await documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
+            Uri documentUri = UriFactory.CreateDocumentCollectionUri(this.DatabaseName, this.instancesCollectionName);
+            return await this.documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
             {
                 PartitionKey = new PartitionKey(value.InstanceId)
             });
@@ -261,8 +251,8 @@ namespace DurableTask.CosmosDB.Tracking
 
         private async Task<ResourceResponse<Document>> SaveHistoryDocument(OrchestrationTrackDocument value)
         {
-            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
-            return await documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
+            var documentUri = UriFactory.CreateDocumentCollectionUri(this.DatabaseName, this.historyCollectionName);
+            return await this.documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
             {
                 PartitionKey = new PartitionKey(value.InstanceId)
             });
@@ -274,16 +264,16 @@ namespace DurableTask.CosmosDB.Tracking
 
             if (!string.IsNullOrEmpty(instanceId))
             {
-                var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
+                Uri collectionUri = UriFactory.CreateDocumentCollectionUri(this.DatabaseName, this.historyCollectionName);
 
-                var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
+                IDocumentQuery<OrchestrationStateDocument> query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
                 {
                     PartitionKey = new PartitionKey(instanceId)
 
                 })
                     .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
 
-                var list = await query.ExecuteNextAsync<OrchestrationTrackDocument>();
+                FeedResponse<OrchestrationTrackDocument> list = await query.ExecuteNextAsync<OrchestrationTrackDocument>();
 
                 if (list != null && list.Count > 0)
                 {
@@ -301,11 +291,13 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task UpdateStateAsync(OrchestrationRuntimeState runtimeState, string instanceId, string executionId)
         {
-            OrchestrationTrackDocument document = await GetHistoryDocument(instanceId);
+            OrchestrationTrackDocument document = await this.GetHistoryDocument(instanceId);
             if (document == null)
             {
-                document = new OrchestrationTrackDocument();
-                document.InstanceId = instanceId;
+                document = new OrchestrationTrackDocument
+                {
+                    InstanceId = instanceId
+                };
             }
 
             if (!document.History.ContainsKey(executionId))
@@ -313,17 +305,16 @@ namespace DurableTask.CosmosDB.Tracking
                 document.History.Add(executionId, new List<JObject>());
             }
 
-            OrchestrationStateDocument value = await GetDocumentStateAsync(instanceId);
+            OrchestrationStateDocument value = await this.GetDocumentStateAsync(instanceId);
             if (value == null)
             {
-                value = new OrchestrationStateDocument()
+                value = new OrchestrationStateDocument
                 {
                     InstanceId = instanceId,
+                    Executions = new Dictionary<string, OrchestrationState>(),
                 };
 
-                value.Executions = new Dictionary<string, OrchestrationState>();
             }
-            EventType? orchestratorEventType = null;
             OrchestrationState state;
             if (!string.IsNullOrEmpty(executionId) && value.Executions.ContainsKey(executionId))
             {
@@ -334,7 +325,7 @@ namespace DurableTask.CosmosDB.Tracking
                 state = new OrchestrationState();
             }
 
-            foreach (var historyEvent in runtimeState.NewEvents)
+            foreach (HistoryEvent historyEvent in runtimeState.NewEvents)
             {
                 Trace.WriteLine($"EventType: {historyEvent.EventType}");
                 document.History[executionId].Add(new JsonEntityConverter().ConvertToTableEntity(historyEvent));
@@ -342,7 +333,6 @@ namespace DurableTask.CosmosDB.Tracking
                 switch (historyEvent.EventType)
                 {
                     case EventType.ExecutionStarted:
-                        orchestratorEventType = historyEvent.EventType;
                         ExecutionStartedEvent executionStartedEvent = (ExecutionStartedEvent)historyEvent;
                         state.Name = executionStartedEvent.Name;
                         state.Version = executionStartedEvent.Version;
@@ -353,7 +343,6 @@ namespace DurableTask.CosmosDB.Tracking
                         state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                     case EventType.ExecutionCompleted:
-                        orchestratorEventType = historyEvent.EventType;
                         ExecutionCompletedEvent executionCompleted = (ExecutionCompletedEvent)historyEvent;
                         state.Status = executionCompleted.OrchestrationStatus.ToString();
                         state.OrchestrationStatus = executionCompleted.OrchestrationStatus;
@@ -361,7 +350,6 @@ namespace DurableTask.CosmosDB.Tracking
                         state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                     case EventType.ExecutionTerminated:
-                        orchestratorEventType = historyEvent.EventType;
                         ExecutionTerminatedEvent executionTerminatedEvent = (ExecutionTerminatedEvent)historyEvent;
                         // TODO: Luis I think the property to be set is result and output
                         // look here: durabletask\src\DurableTask.AzureStorage\Tracking\AzureTableTrackingStore.cs line 418
@@ -372,7 +360,6 @@ namespace DurableTask.CosmosDB.Tracking
                         state.LastUpdatedTime = historyEvent.Timestamp;
                         break;
                     case EventType.ContinueAsNew:
-                        orchestratorEventType = historyEvent.EventType;
                         ExecutionCompletedEvent executionCompletedEvent = (ExecutionCompletedEvent)historyEvent;
                         state.Output = executionCompletedEvent.Result;
                         state.Status = OrchestrationStatus.ContinuedAsNew.ToString();
@@ -405,15 +392,12 @@ namespace DurableTask.CosmosDB.Tracking
             }
 
             value.SetPropertyValue("executions", value.Executions);
-            await UpsertOrchestrationState(value);            
+            await this.UpsertOrchestrationState(value);            
         }
 
         public void Dispose()
         {
-            if (this.documentClient != null)
-            {
-                this.documentClient.Dispose();
-            }
+            this.documentClient?.Dispose();
         }
     }
 }

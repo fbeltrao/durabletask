@@ -89,7 +89,7 @@ namespace DurableTask.CosmosDB.Monitoring
             var workItemQueue = service.WorkItemQueue;
             
             
-            var controlQueues = await service.queueManager.GetControlQueuesAsync(partitionCount: Utils.DefaultPartitionCount);
+            var controlQueues = await service.QueueManager.GetControlQueuesAsync(partitionCount: Utils.DefaultPartitionCount);
 
             Task<QueueMetric> workItemMetricTask = GetQueueMetricsAsync(workItemQueue);
             List<Task<QueueMetric>> controlQueueMetricTasks = controlQueues.Select(GetQueueMetricsAsync).ToList();
@@ -106,7 +106,7 @@ namespace DurableTask.CosmosDB.Monitoring
             {
                 // The queues are not yet provisioned.
                 AnalyticsEventSource.Log.MonitorWarning(
-                    this.service.settings.StorageConnectionString,
+                    this.service.Settings.StorageConnectionString,
                     this.taskHub,
                     $"Task hub has not been provisioned: {e.RequestInformation.ExtendedErrorInformation?.ErrorMessage}");
                 return false;
@@ -218,7 +218,7 @@ namespace DurableTask.CosmosDB.Monitoring
         /// <returns>The approximate number of messages across all control queues.</returns>
         protected virtual async Task<ControlQueueData> GetAggregateControlQueueLengthAsync()
         {
-            var controlQueues = await service.queueManager.GetControlQueuesAsync(
+            var controlQueues = await service.QueueManager.GetControlQueuesAsync(
                 partitionCount: Utils.DefaultPartitionCount);
 
             // There is one queue per partition.
