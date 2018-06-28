@@ -105,7 +105,7 @@ namespace DurableTask.CosmosDB
                 }
                 else
                 {
-                    this.TrackingStore = new CosmosDbTrackingStore(settings.CosmosDbEndpoint, settings.CosmosDbAuthKey, $"{settings.TaskHubName}instance", $"{settings.TaskHubName}history", "durabletask");
+                    this.TrackingStore = new CosmosDBTrackingStore(settings.CosmosDbEndpoint, settings.CosmosDbAuthKey, $"{settings.TaskHubName}instance", $"{settings.TaskHubName}history", "durabletask");
                 }
             }
             else

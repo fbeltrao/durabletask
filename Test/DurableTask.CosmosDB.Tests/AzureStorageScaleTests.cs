@@ -483,7 +483,7 @@ namespace DurableTask.CosmosDB.Tests
                     Array.TrueForAll(states, s => s?.OrchestrationStatus == OrchestrationStatus.Completed),
                     "Not all orchestrations completed successfully!");
 
-                var tableTrackingStore = service.TrackingStore as CosmosDbTrackingStore;
+                var tableTrackingStore = service.TrackingStore as CosmosDBTrackingStore;
 
                 if (tableTrackingStore != null)
                 {

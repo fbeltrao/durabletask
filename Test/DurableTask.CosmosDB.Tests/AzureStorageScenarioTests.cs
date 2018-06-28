@@ -782,7 +782,7 @@ namespace DurableTask.CosmosDB.Tests
 ]
 ";
 
-            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDbQueueMessage>>(plainJson,
+            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDBQueueMessage>>(plainJson,
                 new JsonSerializerSettings
                 {
                     TypeNameHandling = TypeNameHandling.Objects,                    
@@ -839,15 +839,15 @@ namespace DurableTask.CosmosDB.Tests
 }
 ";
 
-            var result = JsonConvert.DeserializeObject<CosmosDbQueueMessage>(plainJson,
+            var result = JsonConvert.DeserializeObject<CosmosDBQueueMessage>(plainJson,
                 new JsonSerializerSettings
                 {
                     TypeNameHandling = TypeNameHandling.Objects,
                 });
 
             Assert.IsNotNull(result);
-            Assert.IsInstanceOfType(result, typeof(CosmosDbQueueMessage));
-            var qm = (CosmosDbQueueMessage)result;
+            Assert.IsInstanceOfType(result, typeof(CosmosDBQueueMessage));
+            var qm = (CosmosDBQueueMessage)result;
             Assert.AreEqual(1, qm.DequeueCount);
             Assert.AreEqual(QueueItemStatus.InProgress, qm.Status);
             Assert.AreEqual("testhub-control-00", qm.QueueName);

@@ -31,7 +31,7 @@ namespace DurableTask.CosmosDB.Queue
     /// </summary>
     public class CosmosDBQueue : IDisposable, IQueue
     {
-        private readonly CosmosDbQueueSettings settings;
+        private readonly CosmosDBQueueSettings settings;
         DocumentClient documentClientWithSerializationSettings;
         DocumentClient documentClientWithoutSerializationSettings;
         bool initialized = false;
@@ -53,7 +53,7 @@ namespace DurableTask.CosmosDB.Queue
         /// <summary>
         /// Constructor
         /// </summary>
-        public CosmosDBQueue(CosmosDbQueueSettings settings, string name)
+        public CosmosDBQueue(CosmosDBQueueSettings settings, string name)
         {
             this.settings = settings;
             this.Name = name;
@@ -64,7 +64,7 @@ namespace DurableTask.CosmosDB.Queue
         /// </summary>
         /// <param name="message"></param>
         /// <returns></returns>
-        internal async Task<CosmosDbQueueMessage> Enqueue(CosmosDbQueueMessage message)
+        internal async Task<CosmosDBQueueMessage> Enqueue(CosmosDBQueueMessage message)
         {
             if (!this.initialized)            
                 throw new InvalidOperationException("Must call Initialize() first");
@@ -113,7 +113,7 @@ namespace DurableTask.CosmosDB.Queue
                 //throw;
             }
 
-            return new CosmosDbQueueMessage[0];
+            return new CosmosDBQueueMessage[0];
         }
 
 
@@ -150,19 +150,19 @@ namespace DurableTask.CosmosDB.Queue
 
         private async Task<IEnumerable<IQueueMessage>> BuildQueueItems(string json)
         {
-            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDbQueueMessage>>(json,
+            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDBQueueMessage>>(json,
                         new JsonSerializerSettings
                         {
                             TypeNameHandling = TypeNameHandling.Objects
                         });
 
-            IEnumerable<CosmosDbQueueMessage> cosmosDbQueueMessages = result as IList<CosmosDbQueueMessage> ?? result.ToList();
+            IEnumerable<CosmosDBQueueMessage> cosmosDbQueueMessages = result as IList<CosmosDBQueueMessage> ?? result.ToList();
             if (cosmosDbQueueMessages.Any())
             {
                 var docs = (JArray)JsonConvert.DeserializeObject(json);
                 for (int i = docs.Count - 1; i >= 0; --i)
                 {
-                    CosmosDbQueueMessage queueItem = cosmosDbQueueMessages.ElementAt(i);
+                    CosmosDBQueueMessage queueItem = cosmosDbQueueMessages.ElementAt(i);
                     queueItem.ETag = docs[i]["_etag"].ToString();
                     
                     if (queueItem.Data is MessageData messageData)
@@ -362,7 +362,7 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task DeleteMessageAsync(IQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            var cosmosQueueMessage = (CosmosDbQueueMessage)queueMessage;
+            var cosmosQueueMessage = (CosmosDBQueueMessage)queueMessage;
             if (this.DeletedCompletedItems)
             {
                 await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.DeleteDocumentAsync(
@@ -389,7 +389,7 @@ namespace DurableTask.CosmosDB.Queue
         /// </summary>
         /// <param name="message"></param>
         /// <returns></returns>
-        async Task<ResourceResponse<Document>> SaveQueueItem(CosmosDbQueueMessage message)
+        async Task<ResourceResponse<Document>> SaveQueueItem(CosmosDBQueueMessage message)
         {
             var reqOptions = new RequestOptions()
             {
@@ -448,7 +448,7 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task UpdateMessageAsync(IQueueMessage originalQueueMessage, TimeSpan controlQueueVisibilityTimeout, MessageUpdateFields updateFields, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            var cosmosDbQueueMessage = (CosmosDbQueueMessage)originalQueueMessage;
+            var cosmosDbQueueMessage = (CosmosDBQueueMessage)originalQueueMessage;
             if (updateFields == MessageUpdateFields.Visibility)
             {
                 // We "abandon" the message by settings its visibility timeout to zero.
@@ -464,7 +464,7 @@ namespace DurableTask.CosmosDB.Queue
         public Task<IQueueMessage> PeekMessageAsync()
         {
             // TODO: implement it
-            var qm = new CosmosDbQueueMessage();
+            var qm = new CosmosDBQueueMessage();
             return Task.FromResult<IQueueMessage>(qm);
             //throw new NotImplementedException();
         }
@@ -473,7 +473,7 @@ namespace DurableTask.CosmosDB.Queue
         public Task<int> GetQueueLenghtAsync()
         {
             int count = this.documentClientWithSerializationSettings
-                .CreateDocumentQuery<CosmosDbQueueMessage>(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName))
+                .CreateDocumentQuery<CosmosDBQueueMessage>(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName))
                 .Count(x => x.Status == QueueItemStatus.Pending && x.NextVisibleTime <= Utils.ToUnixTime(DateTime.UtcNow));
 
             return Task.FromResult<int>(count);

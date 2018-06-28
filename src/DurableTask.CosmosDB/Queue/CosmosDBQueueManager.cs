@@ -17,7 +17,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using DurableTask.CosmosDB;
 using DurableTask.CosmosDB.Monitoring;
 using DurableTask.Core;
 using Microsoft.WindowsAzure.Storage;
@@ -62,7 +61,7 @@ namespace DurableTask.CosmosDB.Queue
 
         CosmosDBQueue GetQueue(string name)
         {
-            var queueSettings = new CosmosDbQueueSettings
+            var queueSettings = new CosmosDBQueueSettings
             {
                 QueueCollectionDefinition = new CosmosDBCollectionDefinition
                 {
@@ -99,7 +98,7 @@ namespace DurableTask.CosmosDB.Queue
 
             var data = new MessageData(message, outboundTraceActivityId, queue.Name);
 
-            var msg = new CosmosDbQueueMessage
+            var msg = new CosmosDBQueueMessage
             {
                 Data = data,
             };
@@ -139,7 +138,7 @@ namespace DurableTask.CosmosDB.Queue
 
             Guid outboundTraceActivityId = Guid.NewGuid();
             var data = new MessageData(taskMessage, outboundTraceActivityId, queue.Name);
-            var msg = new CosmosDbQueueMessage
+            var msg = new CosmosDBQueueMessage
             {
                 Data = data,
             };         
@@ -177,13 +176,13 @@ namespace DurableTask.CosmosDB.Queue
         public async Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
             var wq = (CosmosDBQueue)queue;
-            var queueMessage = ((CosmosDbQueueMessage)await wq.GetMessageAsync(
+            var queueMessage = ((CosmosDBQueueMessage)await wq.GetMessageAsync(
                     queueVisibilityTimeout,
                     requestOptions,
                     operationContext,
                     cancellationToken));
 
-            this.stats.CosmosDbRequests.Increment();
+            this.stats.CosmosDBRequests.Increment();
 
             if (queueMessage != null)
             {
@@ -211,11 +210,11 @@ namespace DurableTask.CosmosDB.Queue
                         null /* operationContext */,
                         cancellationToken);
 
-                    this.stats.CosmosDbRequests.Increment();
+                    this.stats.CosmosDBRequests.Increment();
 
                     if (batch != null)
                     {
-                        IEnumerable<MessageData> incomingMessages = batch.Select(x => (MessageData)((CosmosDbQueueMessage)x).Data);
+                        IEnumerable<MessageData> incomingMessages = batch.Select(x => (MessageData)((CosmosDBQueueMessage)x).Data);
 
                         lock (messages)
                         {

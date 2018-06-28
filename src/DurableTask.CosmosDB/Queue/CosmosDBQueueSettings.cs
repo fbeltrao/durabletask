@@ -18,7 +18,7 @@ namespace DurableTask.CosmosDB.Queue
     /// <summary>
     /// 
     /// </summary>
-    public class CosmosDbQueueSettings
+    public class CosmosDBQueueSettings
     {
         /// <summary>
         /// 

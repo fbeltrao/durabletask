@@ -33,7 +33,7 @@ namespace DurableTask.CosmosDB.Monitoring
 
         public Counter PendingOrchestratorMessages { get; } = new Counter();
 
-        public Counter CosmosDbRequests { get; } = new Counter();
+        public Counter CosmosDBRequests { get; } = new Counter();
 
     }
 }
