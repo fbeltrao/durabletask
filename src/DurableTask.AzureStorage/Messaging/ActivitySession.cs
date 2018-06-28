@@ -11,30 +11,22 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.AzureStorage.Messaging
 {
     using System;
-    using System.Collections.Generic;
-    using System.Diagnostics;
-    using System.Threading.Tasks;
 
-    static class Utils
+    class ActivitySession : SessionBase
     {
-        public static readonly Task CompletedTask = Task.FromResult(0);
-
-        public static readonly string ExtensionVersion = FileVersionInfo.GetVersionInfo(typeof(AzureStorageOrchestrationService).Assembly.Location).FileVersion;
-
-        public static async Task ParallelForEachAsync<TSource>(
-            this IEnumerable<TSource> enumerable,
-            Func<TSource, Task> createTask)
+        public ActivitySession(
+            string storageAccountName,
+            string taskHubName,
+            MessageData message,
+            Guid traceActivityId)
+            : base(storageAccountName, taskHubName, message.TaskMessage.OrchestrationInstance, traceActivityId)
         {
-            var tasks = new List<Task>();
-            foreach (TSource entry in enumerable)
-            {
-                tasks.Add(createTask(entry));
-            }
-
-            await Task.WhenAll(tasks.ToArray());
+            this.MessageData = message ?? throw new ArgumentNullException(nameof(message));
         }
+
+        public MessageData MessageData { get; }
     }
 }

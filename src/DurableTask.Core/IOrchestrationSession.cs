@@ -11,30 +11,24 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.Core
 {
-    using System;
     using System.Collections.Generic;
-    using System.Diagnostics;
     using System.Threading.Tasks;
 
-    static class Utils
+    /// <summary>
+    /// Interface allowing providers to implement extended sessions (aka "sticky sessions").
+    /// </summary>
+    public interface IOrchestrationSession
     {
-        public static readonly Task CompletedTask = Task.FromResult(0);
-
-        public static readonly string ExtensionVersion = FileVersionInfo.GetVersionInfo(typeof(AzureStorageOrchestrationService).Assembly.Location).FileVersion;
-
-        public static async Task ParallelForEachAsync<TSource>(
-            this IEnumerable<TSource> enumerable,
-            Func<TSource, Task> createTask)
-        {
-            var tasks = new List<Task>();
-            foreach (TSource entry in enumerable)
-            {
-                tasks.Add(createTask(entry));
-            }
-
-            await Task.WhenAll(tasks.ToArray());
-        }
+        /// <summary>
+        /// When implemented, fetches a new batch of messages for a particular work item.
+        /// </summary>
+        /// <remarks>
+        /// Implementors of this method should feel free to block until new messages are available,
+        /// or until an internal wait period has expired. In either case, <c>null</c> can be returned
+        /// and the dispatcher will shut down the session.
+        /// </remarks>
+        Task<IList<TaskMessage>> FetchNewOrchestrationMessagesAsync(TaskOrchestrationWorkItem workItem);
     }
 }

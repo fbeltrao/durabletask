@@ -11,30 +11,27 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.ServiceBus.Settings
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Diagnostics;
-    using System.Threading.Tasks;
+    using DurableTask.Core; 
 
-    static class Utils
+    /// <summary>
+    ///     Settings to configure the Service Bus message sender
+    /// </summary>
+    public class ServiceBusMessageSenderSettings
     {
-        public static readonly Task CompletedTask = Task.FromResult(0);
-
-        public static readonly string ExtensionVersion = FileVersionInfo.GetVersionInfo(typeof(AzureStorageOrchestrationService).Assembly.Location).FileVersion;
-
-        public static async Task ParallelForEachAsync<TSource>(
-            this IEnumerable<TSource> enumerable,
-            Func<TSource, Task> createTask)
+        internal ServiceBusMessageSenderSettings() :
+            this(FrameworkConstants.BatchFlushIntervalInMilliSecs)
         {
-            var tasks = new List<Task>();
-            foreach (TSource entry in enumerable)
-            {
-                tasks.Add(createTask(entry));
-            }
-
-            await Task.WhenAll(tasks.ToArray());
         }
+
+        internal ServiceBusMessageSenderSettings(int batchFlushInterval)
+        {
+        }
+
+        /// <summary>
+        ///    The sender batch flush interval in millisecs
+        /// </summary>
+        public int BatchFlushIntervalInMilliSecs { get; set; }
     }
 }

@@ -11,30 +11,21 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.Core
 {
     using System;
-    using System.Collections.Generic;
-    using System.Diagnostics;
-    using System.Threading.Tasks;
+    using System.Runtime.Serialization;
 
-    static class Utils
+    /// <summary>
+    /// Deprecated Wrapper for the OrchestrationState in the Tracking Queue
+    /// </summary>
+    [Obsolete("This has been Replaced by a combination of the HistoryStateEvent and TaskMessage")]
+    [DataContract]
+    public class StateMessage
     {
-        public static readonly Task CompletedTask = Task.FromResult(0);
-
-        public static readonly string ExtensionVersion = FileVersionInfo.GetVersionInfo(typeof(AzureStorageOrchestrationService).Assembly.Location).FileVersion;
-
-        public static async Task ParallelForEachAsync<TSource>(
-            this IEnumerable<TSource> enumerable,
-            Func<TSource, Task> createTask)
-        {
-            var tasks = new List<Task>();
-            foreach (TSource entry in enumerable)
-            {
-                tasks.Add(createTask(entry));
-            }
-
-            await Task.WhenAll(tasks.ToArray());
-        }
+        /// <summary>
+        /// The Orchestration State
+        /// </summary>
+        [DataMember] public OrchestrationState State;
     }
 }

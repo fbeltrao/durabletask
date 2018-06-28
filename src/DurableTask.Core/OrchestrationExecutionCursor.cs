@@ -11,30 +11,28 @@
 //  limitations under the License.
 //  ----------------------------------------------------------------------------------
 
-namespace DurableTask.AzureStorage
+namespace DurableTask.Core
 {
-    using System;
     using System.Collections.Generic;
-    using System.Diagnostics;
-    using System.Threading.Tasks;
+    using DurableTask.Core.Command;
 
-    static class Utils
+    class OrchestrationExecutionCursor
     {
-        public static readonly Task CompletedTask = Task.FromResult(0);
-
-        public static readonly string ExtensionVersion = FileVersionInfo.GetVersionInfo(typeof(AzureStorageOrchestrationService).Assembly.Location).FileVersion;
-
-        public static async Task ParallelForEachAsync<TSource>(
-            this IEnumerable<TSource> enumerable,
-            Func<TSource, Task> createTask)
+        public OrchestrationExecutionCursor(
+            OrchestrationRuntimeState state,
+            TaskOrchestration orchestration,
+            TaskOrchestrationExecutor executor,
+            IEnumerable<OrchestratorAction> latestDecisions)
         {
-            var tasks = new List<Task>();
-            foreach (TSource entry in enumerable)
-            {
-                tasks.Add(createTask(entry));
-            }
-
-            await Task.WhenAll(tasks.ToArray());
+            this.RuntimeState = state;
+            this.TaskOrchestration = orchestration;
+            this.OrchestrationExecutor = executor;
+            this.LatestDecisions = latestDecisions;
         }
+
+        public OrchestrationRuntimeState RuntimeState { get; }
+        public TaskOrchestration TaskOrchestration { get; }
+        public TaskOrchestrationExecutor OrchestrationExecutor { get; }
+        public IEnumerable<OrchestratorAction> LatestDecisions { get; set; }
     }
 }
