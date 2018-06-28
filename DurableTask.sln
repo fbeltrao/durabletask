@@ -49,6 +49,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.CosmosDB", "src
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DurableTask.CosmosDB.Tests", "Test\DurableTask.CosmosDB.Tests\DurableTask.CosmosDB.Tests.csproj", "{007FD559-A096-4397-9F13-47612AD4E918}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DurableTask.CosmosDB.Performance.Tests", "DurableTask.CosmosDB.Performance.Test\DurableTask.CosmosDB.Performance.Tests.csproj", "{1879668E-2CF1-419A-9539-94B21D9A06AA}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8E75A459-4A52-4248-B038-F6171A65B5F1}"
+	ProjectSection(SolutionItems) = preProject
+		Local.testsettings = Local.testsettings
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -115,6 +122,10 @@ Global
 		{007FD559-A096-4397-9F13-47612AD4E918}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{007FD559-A096-4397-9F13-47612AD4E918}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{007FD559-A096-4397-9F13-47612AD4E918}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1879668E-2CF1-419A-9539-94B21D9A06AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1879668E-2CF1-419A-9539-94B21D9A06AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1879668E-2CF1-419A-9539-94B21D9A06AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1879668E-2CF1-419A-9539-94B21D9A06AA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -135,9 +146,11 @@ Global
 		{A9C31BE4-630D-4751-AF06-A9D41FEF554C} = {95C69A06-7F62-4652-A480-207B614C2869}
 		{32DEFE84-30D6-43A4-8112-B0DD907C6BF0} = {DBCD161C-D409-48E5-924E-9B7FA1C36B84}
 		{007FD559-A096-4397-9F13-47612AD4E918} = {95C69A06-7F62-4652-A480-207B614C2869}
+		{1879668E-2CF1-419A-9539-94B21D9A06AA} = {95C69A06-7F62-4652-A480-207B614C2869}
+		{8E75A459-4A52-4248-B038-F6171A65B5F1} = {95C69A06-7F62-4652-A480-207B614C2869}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		EnterpriseLibraryConfigurationToolBinariesPath = packages\TransientFaultHandling.Core.5.1.1209.1\lib\NET4
 		SolutionGuid = {6F74A4E1-C5F3-43E0-9FF0-973F7425B417}
+		EnterpriseLibraryConfigurationToolBinariesPath = packages\TransientFaultHandling.Core.5.1.1209.1\lib\NET4
 	EndGlobalSection
 EndGlobal

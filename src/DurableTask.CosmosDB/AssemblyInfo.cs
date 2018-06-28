@@ -16,4 +16,5 @@ using System.Runtime.CompilerServices;
 #if !SIGN_ASSEMBLY
 [assembly: InternalsVisibleTo("DurableTask.AzureStorage.Tests")]
 [assembly: InternalsVisibleTo("DurableTask.CosmosDB.Tests")]
+[assembly: InternalsVisibleTo("DurableTask.CosmosDB.Performance.Tests")]
 #endif
