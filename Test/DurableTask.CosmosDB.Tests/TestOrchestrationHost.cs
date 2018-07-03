@@ -21,7 +21,7 @@ namespace DurableTask.CosmosDB.Tests
     using DurableTask.AzureStorage;
     using DurableTask.Core;
 
-    internal sealed class TestOrchestrationHost : IDisposable
+    public sealed class TestOrchestrationHost : IDisposable
     {
         readonly TaskHubWorker worker;
         readonly TaskHubClient client;

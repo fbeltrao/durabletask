@@ -68,7 +68,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
 
                 ++processedItemsCount;
 
-                if (processedItemsCount == foundItemsCount) {
+                if (processedItemsCount === foundItemsCount) {
                     var response = getContext().getResponse();
                     response.setBody(JSON.stringify(itemsToReturn));
                 } else {

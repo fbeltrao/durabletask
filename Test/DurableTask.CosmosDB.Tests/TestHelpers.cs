@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace DurableTask.CosmosDB.Tests
 {
-    static class TestHelpers
+    public static class TestHelpers
     {
         const string LeaseManagementCollectionName = "unitTestLeaseManagement";
 
