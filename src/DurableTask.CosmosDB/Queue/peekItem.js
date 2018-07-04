@@ -15,7 +15,7 @@ function peekItem() {
                 var  response = getContext().getResponse();
                 response.setBody('');
             } else  {
-                var  response = getContext().getResponse();
+                var response = getContext().getResponse();
                 var queueItem = feed[0];
                 queueItem.status = 'InProgress';
                 queueItem.lockedUntil = '';

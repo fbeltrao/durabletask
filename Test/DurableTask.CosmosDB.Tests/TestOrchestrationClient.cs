@@ -19,7 +19,7 @@ namespace DurableTask.CosmosDB.Tests
     using DurableTask.Core;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-    class TestOrchestrationClient
+    public class TestOrchestrationClient
     {
         readonly TaskHubClient client;
         readonly Type orchestrationType;

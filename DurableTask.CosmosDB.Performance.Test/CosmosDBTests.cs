@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Threading.Tasks;
+using DurableTask.Core;
 using DurableTask.CosmosDB.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -7,6 +9,45 @@ namespace DurableTask.CosmosDB.Performance.Tests
     [TestClass]
     public class CosmosDBTests
     {
+        static TestOrchestrationHost cosmosDBHost;
+        static CosmosDBTests()
+        {
+            cosmosDBHost = TestHelpers.GetTestOrchestrationHost(OrchestrationBackendType.CosmosDB);
+            cosmosDBHost.StartAsync().GetAwaiter().GetResult();
+        }
+
+        [TestMethod]
+        public async Task CosmosDB_ParallelActivityProcessing()
+        {
+            var client = await cosmosDBHost.StartOrchestrationAsync(typeof(ParallelActivityProcessing), Constants.ACTIVITY_COUNT);            
+            
+            var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
+            while (status?.OrchestrationStatus != OrchestrationStatus.Completed)
+            {
+                status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(2));
+            }
+
+            Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+            Assert.AreEqual(Constants.ACTIVITY_COUNT.ToString(), status?.Input.ToString());
+            Assert.AreEqual(Constants.ACTIVITY_COUNT.ToString(), status?.Output.ToString());           
+        }
+
+        [TestMethod]
+        public async Task CosmosDB_SequentialActivityProcessing()
+        {
+            var client = await cosmosDBHost.StartOrchestrationAsync(typeof(SequentialActivityProcessing), Constants.ACTIVITY_COUNT);
+
+            var status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(5));
+            while (status?.OrchestrationStatus != OrchestrationStatus.Completed)
+            {
+                status = await client.WaitForCompletionAsync(TimeSpan.FromSeconds(2));
+            }
+
+            Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);
+            Assert.AreEqual(Constants.ACTIVITY_COUNT.ToString(), status?.Input.ToString());
+            Assert.AreEqual(Constants.ACTIVITY_COUNT.ToString(), status?.Output.ToString());
+        }
+
         [TestMethod]
         public void ActorOrchestration()
         {

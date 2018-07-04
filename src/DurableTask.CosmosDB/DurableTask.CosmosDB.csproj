@@ -20,7 +20,7 @@
       <Version>1.9.1</Version>
     </PackageReference>
     <PackageReference Include="WindowsAzure.Storage" version="8.5.0" />
-    <PackageReference Include="Newtonsoft.Json" version="10.0.3" />
+    <PackageReference Include="Newtonsoft.Json" version="11.0.2" />
     <PackageReference Include="System.Configuration.ConfigurationManager">
       <Version>4.4.1</Version>
     </PackageReference>
