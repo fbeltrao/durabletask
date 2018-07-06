@@ -71,6 +71,17 @@ namespace DurableTask.CosmosDB.Tracking
                 Id = this.instancesCollectionName,
             };
 
+            // index only instanceId column
+            instanceCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "/*" });
+            instanceCollection.IndexingPolicy.IncludedPaths.Add(new IncludedPath()
+            {
+                Path = $"/instanceId/?",
+                Indexes = new System.Collections.ObjectModel.Collection<Index>()
+                {
+                    new HashIndex(DataType.String, -1)
+                }
+            });
+
             instanceCollection.PartitionKey.Paths.Add("/instanceId");
 
             await documentClient.CreateDocumentCollectionIfNotExistsAsync(
@@ -83,6 +94,18 @@ namespace DurableTask.CosmosDB.Tracking
             {
                 Id = this.historyCollectionName,
             };
+
+            // index only instanceId column
+            historyCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "/*" });
+            historyCollection.IndexingPolicy.IncludedPaths.Add(new IncludedPath()
+            {
+                Path = $"/instanceId/?",
+                Indexes = new System.Collections.ObjectModel.Collection<Index>()
+                {
+                    new HashIndex(DataType.String, -1)
+                }
+            });
+
 
             historyCollection.PartitionKey.Paths.Add("/instanceId");
 

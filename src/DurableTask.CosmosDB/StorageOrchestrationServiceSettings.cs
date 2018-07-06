@@ -14,6 +14,7 @@
 namespace DurableTask.CosmosDB
 {
     using System;
+    using System.Diagnostics;
     using DurableTask.AzureStorage;
     using Microsoft.WindowsAzure.Storage.Queue;
     using Microsoft.WindowsAzure.Storage.Table;
@@ -88,5 +89,33 @@ namespace DurableTask.CosmosDB
 
         /// <inheritdoc />
         public string CosmosDBName { get; set; } = "durabletask";
+
+        /// <inheritdoc />
+        public string ApplicationInsightsInstrumentationKey { get; set; }
+
+        /// <inheritdoc />
+        public int CosmosDBQueueCollectionThroughput { get; set; } = 2000;
+
+        /// <inheritdoc />
+        public bool CosmosDBQueueUsePartition { get; set; } = false;
+
+        /// <inheritdoc />
+        public bool CosmosDBLeaseManagementUsePartition { get; set; } = false;
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public StorageOrchestrationServiceSettings()
+        {
+#if DEBUG
+            if (Debugger.IsAttached)
+            {
+                this.LeaseInterval = TimeSpan.FromSeconds(180);
+                this.LeaseAcquireInterval = TimeSpan.FromSeconds(30);
+                this.LeaseRenewInterval = TimeSpan.FromSeconds(30);
+            }
+
+#endif
+        }
     }
 }

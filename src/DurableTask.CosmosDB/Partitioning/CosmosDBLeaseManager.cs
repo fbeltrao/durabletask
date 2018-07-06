@@ -35,6 +35,7 @@ namespace DurableTask.AzureStorage
         private string cosmosDBEndpoint;
         private string cosmosDBAuthKey;
         private string cosmosDBLeaseManagementCollection;
+        private readonly bool cosmosDBLeaseManagementUsePartition;
         private TimeSpan leaseInterval;
         private TimeSpan leaseRenewInterval;
         private AzureStorageOrchestrationServiceStats stats;
@@ -47,16 +48,18 @@ namespace DurableTask.AzureStorage
             string cosmosDBAuthKey, 
             string cosmosDBName,
             string cosmosDBLeaseManagementCollection, 
+            bool cosmosDBLeaseManagementUsePartition,
             TimeSpan leaseInterval, 
             TimeSpan leaseRenewInterval, 
             AzureStorageOrchestrationServiceStats stats)
         {
             this.taskHubName = taskHubName;
-            this.workerId = workerId;
+            this.workerId = workerId;            
             this.cosmosDBName = cosmosDBName;
             this.cosmosDBEndpoint = cosmosDBEndpoint;
             this.cosmosDBAuthKey = cosmosDBAuthKey;
             this.cosmosDBLeaseManagementCollection = cosmosDBLeaseManagementCollection;
+            this.cosmosDBLeaseManagementUsePartition = cosmosDBLeaseManagementUsePartition;
             this.leaseInterval = leaseInterval;
             this.leaseRenewInterval = leaseRenewInterval;
             this.stats = stats ?? new AzureStorageOrchestrationServiceStats();
@@ -102,8 +105,16 @@ namespace DurableTask.AzureStorage
                 CollectionName = this.cosmosDBLeaseManagementCollection,
                 DbName = cosmosDBName,
                 SecretKey = this.cosmosDBAuthKey,
-
+            
             };
+
+            if (cosmosDBLeaseManagementUsePartition)
+            {
+                cosmosDbCollectionDefinition.PartitionKeyPaths = new System.Collections.ObjectModel.Collection<string>(new List<string>()
+                {
+                    string.Concat("/", nameof(CosmosDBTaskHubInfoWrapper.TaskHubName))
+                });
+            }
 
             await Utils.CreateCollectionIfNotExists(cosmosDbCollectionDefinition);
             this.stats.CosmosDBRequests.Increment();
@@ -130,9 +141,19 @@ namespace DurableTask.AzureStorage
                     TaskHubName = taskHubName
                 };
 
+                RequestOptions requestOptions = null;
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions = new RequestOptions()
+                    {
+                        PartitionKey = new PartitionKey(lease.TaskHubName)
+                    };
+                }
+
                 await this.documentClient.CreateDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection),
-                    lease);
+                    lease,
+                    requestOptions);
             }
             catch (DocumentClientException ex)
             {
@@ -150,12 +171,26 @@ namespace DurableTask.AzureStorage
         {
             var leases = new List<CosmosDBLease>();
             try
-            {
+            {                
+                IDocumentQuery<CosmosDBLease> feed = null;
 
-                var feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
-                    UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
-                    .Where(d => d.TaskHubName == taskHubName)
-                    .AsDocumentQuery();
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
+                        UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection),
+                        new FeedOptions()
+                        {
+                            PartitionKey = new PartitionKey(taskHubName)
+                        })
+                        .AsDocumentQuery();
+                }
+                else
+                {
+                    feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
+                        UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
+                        .Where(d => d.TaskHubName == taskHubName)
+                        .AsDocumentQuery();
+                }
 
                 while (feed.HasMoreResults)
                 {
@@ -204,9 +239,20 @@ namespace DurableTask.AzureStorage
                         this.taskHubName,
                         partition));
 
+                RequestOptions requestOptions = null;
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions = new RequestOptions()
+                    {
+                        PartitionKey = new PartitionKey(lease.TaskHubName)
+                    };
+                }
+
+
                 await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
-                    lease);
+                    lease,
+                    requestOptions);
             }
             catch (DocumentClientException documentClientException)
             {
@@ -234,8 +280,19 @@ namespace DurableTask.AzureStorage
         {
             try
             {
+                RequestOptions requestOptions = null;
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions = new RequestOptions()
+                    {
+                        PartitionKey = new PartitionKey(this.taskHubName)
+                    };
+                }
+
+
                 var res = await this.documentClient.ReadDocumentAsync(
-                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, partitionId));
+                    UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, partitionId),
+                    requestOptions);
 
                 var lease = (CosmosDBLease)(dynamic)res.Resource;
                 lease.Token = res.Resource.ETag;
@@ -263,17 +320,26 @@ namespace DurableTask.AzureStorage
                     Epoch = cosmosDBLease.Epoch + 1,
                 };
 
+                RequestOptions requestOptions = new RequestOptions
+                {
+                    AccessCondition = new AccessCondition
+                    {
+                        Condition = cosmosDBLease.Token,
+                        Type = AccessConditionType.IfMatch
+                    }
+                };
+
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions.PartitionKey = new PartitionKey(cosmosDBLease.TaskHubName);
+                }
+
+
                 var res = await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
                     desiredLeaseState,
-                    new RequestOptions
-                    {
-                        AccessCondition = new AccessCondition
-                        {
-                            Condition = cosmosDBLease.Token,
-                            Type = AccessConditionType.IfMatch
-                        }
-                    });
+                    requestOptions
+                    );
 
                 cosmosDBLease.Token = res.Resource.ETag;
                 cosmosDBLease.Epoch = desiredLeaseState.Epoch;
@@ -301,20 +367,26 @@ namespace DurableTask.AzureStorage
                 {
                     LeaseTimeout = Utils.ToUnixTime(DateTime.UtcNow.Add(this.leaseInterval)),
                     Owner = owner,
-                    Epoch = cosmosDBLease.Epoch + 1,
+                    Epoch = cosmosDBLease.Epoch + 1,                    
                 };
+
+                var requestOptions = new RequestOptions
+                {
+                    AccessCondition = new AccessCondition
+                    {
+                        Condition = cosmosDBLease.Token,
+                        Type = AccessConditionType.IfMatch
+                    }
+                };
+
+                if (cosmosDBLeaseManagementUsePartition)
+                    requestOptions.PartitionKey = new PartitionKey(desiredLeaseState.TaskHubName);
 
                 var updateResponse = await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
                     desiredLeaseState,
-                    new RequestOptions
-                    {
-                        AccessCondition = new AccessCondition
-                        {
-                            Condition = cosmosDBLease.Token,
-                            Type = AccessConditionType.IfMatch
-                        }
-                    });
+                    requestOptions
+                    );
 
                 if (updateResponse.StatusCode == HttpStatusCode.OK)
                 {
@@ -349,18 +421,26 @@ namespace DurableTask.AzureStorage
                     Epoch = cosmosDBLease.Epoch + 1
                 };
 
+                var requestOptions = new RequestOptions
+                {
+                    AccessCondition = new AccessCondition
+                    {
+                        Condition = cosmosDBLease.Token,
+                        Type = AccessConditionType.IfMatch
+                    }
+                };
+
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions.PartitionKey = new PartitionKey(desiredLeaseState.TaskHubName);
+                }
+
 
                 var res = await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
                     desiredLeaseState,
-                    new RequestOptions
-                    {
-                        AccessCondition = new AccessCondition
-                        {
-                            Condition = cosmosDBLease.Token,
-                            Type = AccessConditionType.IfMatch
-                        }
-                    });
+                    requestOptions
+                    );
 
                 lease.Token = res.Resource.ETag;
                 lease.Owner = null;
@@ -384,16 +464,23 @@ namespace DurableTask.AzureStorage
             var cosmosDBLease = ((CosmosDBLease)lease);
             try
             {
+
+                var requestOptions = new RequestOptions
+                {
+                    AccessCondition = new AccessCondition
+                    {
+                        Condition = cosmosDBLease.Token,
+                        Type = AccessConditionType.IfMatch
+                    }
+                };
+
+                if (cosmosDBLeaseManagementUsePartition)
+                    requestOptions.PartitionKey = new PartitionKey(cosmosDBLease.TaskHubName);
+
                 await this.documentClient.DeleteDocumentAsync(
                     UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, cosmosDBLease.Id),
-                    new RequestOptions
-                    {
-                        AccessCondition = new AccessCondition
-                        {
-                            Condition = cosmosDBLease.Token,
-                            Type = AccessConditionType.IfMatch
-                        }
-                    });
+                    requestOptions
+                    );
             }
             finally
             {
@@ -425,19 +512,25 @@ namespace DurableTask.AzureStorage
                 return false;
             }
 
-            var leaseBlob = (CosmosDBLease)lease;
+            var cosmosDBLease = (CosmosDBLease)lease;
             try
             {
+
+                var requestOptions = new RequestOptions
+                {
+                    AccessCondition = new AccessCondition
+                    {
+                        Condition = lease.Token,
+                        Type = AccessConditionType.IfMatch
+                    }
+                };
+
+                if (cosmosDBLeaseManagementUsePartition)
+                    requestOptions.PartitionKey = new PartitionKey(cosmosDBLease.TaskHubName);
+
                 await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
-                    new RequestOptions
-                    {
-                        AccessCondition = new AccessCondition
-                        {
-                            Condition = lease.Token,
-                            Type = AccessConditionType.IfMatch
-                        }
-                    });
+                    requestOptions);
 
 
             }
@@ -460,7 +553,23 @@ namespace DurableTask.AzureStorage
 
         public class CosmosDBTaskHubInfoWrapper
         {
+            // Identifier
             public string id { get; set; }
+
+            /// <summary>
+            /// Task hub name
+            /// </summary>
+            public string TaskHubName
+            {
+                get { return this.TaskHubInfo?.TaskHubName; }
+                set
+                {
+                    if (this.TaskHubInfo != null)
+                    {
+                        this.TaskHubInfo.TaskHubName = value;
+                    }
+                }
+            }
 
             public CosmosDBTaskHubInfoWrapper()
             {                
@@ -479,9 +588,19 @@ namespace DurableTask.AzureStorage
         {
             try
             {
+                RequestOptions requestOptions = null;
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions = new RequestOptions()
+                    {
+                        PartitionKey = new PartitionKey(this.taskHubName)
+                    };
+                }
+
                 await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
-                    new CosmosDBTaskHubInfoWrapper(GetTaskHubInfoDocumentId(), taskHubInfo));
+                    new CosmosDBTaskHubInfoWrapper(GetTaskHubInfoDocumentId(), taskHubInfo),
+                    requestOptions);
             }
             catch (DocumentClientException)
             {
@@ -531,8 +650,18 @@ namespace DurableTask.AzureStorage
         {
             try
             {
+                RequestOptions requestOptions = null;
+                if (cosmosDBLeaseManagementUsePartition)
+                {
+                    requestOptions = new RequestOptions()
+                    {
+                        PartitionKey = new PartitionKey(this.taskHubName)
+                    };
+                }
+
                 var res = await this.documentClient.ReadDocumentAsync<DocumentResponse<CosmosDBTaskHubInfoWrapper>>(
-                         UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, GetTaskHubInfoDocumentId()));
+                         UriFactory.CreateDocumentUri(cosmosDBName, cosmosDBLeaseManagementCollection, GetTaskHubInfoDocumentId()),
+                         requestOptions);
                 return res.Document?.Document?.TaskHubInfo;
             }
             catch (DocumentClientException documentClientException)

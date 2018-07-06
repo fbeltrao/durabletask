@@ -60,14 +60,46 @@ namespace DurableTask.AzureStorage
             {
                 await client.CreateDatabaseIfNotExistsAsync(new Database { Id = collectionDefinition.DbName });
 
+                var documentCollection = new DocumentCollection { Id = collectionDefinition.CollectionName };
+
+                if (collectionDefinition.PartitionKeyPaths?.Count > 0)
+                {
+                    documentCollection.PartitionKey = new PartitionKeyDefinition()
+                    {
+                        Paths = collectionDefinition.PartitionKeyPaths,
+                        
+                    };                    
+                }
+
+                if (collectionDefinition.IndexIncludedPaths != null)
+                {
+                    foreach (var index in collectionDefinition.IndexIncludedPaths)
+                        documentCollection.IndexingPolicy.IncludedPaths.Add(index);
+                }
+
+                if (collectionDefinition.IndexExcludedPaths != null)
+                {
+                    foreach (var index in collectionDefinition.IndexExcludedPaths)
+                        documentCollection.IndexingPolicy.ExcludedPaths.Add(index);
+                }
+
+                // Index columns: NextVisibleTime, Status
+                //documentCollection.IndexingPolicy.IncludedPaths.Clear();
+                //documentCollection.IndexingPolicy.IncludedPaths.Add(new IncludedPath
+                //{
+                //    Path = "NextVisibleTime",
+                //    Indexes = 
+                //});
+
                 // create collection if it does not exist 
                 // WARNING: CreateDocumentCollectionIfNotExistsAsync will create a new 
                 // with reserved throughput which has pricing implications. For details
                 // visit: https://azure.microsoft.com/en-us/pricing/details/cosmos-db/
                 await client.CreateDocumentCollectionIfNotExistsAsync(
                     UriFactory.CreateDatabaseUri(collectionDefinition.DbName),
-                    new DocumentCollection { Id = collectionDefinition.CollectionName },
-                    new RequestOptions { OfferThroughput = collectionDefinition.Throughput });
+                    documentCollection,
+                    new RequestOptions { OfferThroughput = collectionDefinition.Throughput }
+                   );
             }
         }
 

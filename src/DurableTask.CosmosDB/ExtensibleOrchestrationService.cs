@@ -29,6 +29,8 @@ namespace DurableTask.AzureStorage
     using DurableTask.CosmosDB;
     using DurableTask.CosmosDB.Queue;
     using DurableTask.CosmosDB.Tracking;
+    using Microsoft.ApplicationInsights;
+    using Microsoft.ApplicationInsights.Extensibility;
     using Microsoft.WindowsAzure.Storage;
     using Microsoft.WindowsAzure.Storage.Blob;
     using Microsoft.WindowsAzure.Storage.Queue;
@@ -41,7 +43,8 @@ namespace DurableTask.AzureStorage
     public class ExtensibleOrchestrationService :
         IOrchestrationService,
         IOrchestrationServiceClient,
-        IPartitionObserver
+        IPartitionObserver,
+        IDisposable
     {
         internal static readonly TimeSpan MaxQueuePollingDelay = TimeSpan.FromSeconds(10);
 
@@ -66,7 +69,7 @@ namespace DurableTask.AzureStorage
         readonly IPartitionManager partitionManager;
 
         readonly object hubCreationLock;
-
+        private readonly TelemetryClient telemetryClient;
         bool isStarted;
         Task statsLoop;
         CancellationTokenSource shutdownSource;
@@ -92,15 +95,29 @@ namespace DurableTask.AzureStorage
 
             ValidateSettings(settings);
 
+
+            if (!string.IsNullOrEmpty(settings.ApplicationInsightsInstrumentationKey))
+            {
+                var config = new TelemetryConfiguration(settings.ApplicationInsightsInstrumentationKey)
+                {                                    
+                };
+
+                var backendType = (!string.IsNullOrEmpty(settings.StorageConnectionString)) ? "storage" : "cosmosdb";
+                config.TelemetryInitializers.Add(new CosmosDB.Monitoring.DurableTaskTelemetryInitializer(backendType));
+
+                this.telemetryClient = new TelemetryClient(config);
+                
+            }
+
             // TBD - decide if we will use Storage or Cosmos DB. For now initialize Storage specific settings. 
             this.settings = settings;
             this.tableEntityConverter = new TableEntityConverter();
-            this.stats = new AzureStorageOrchestrationServiceStats();
+            this.stats = new AzureStorageOrchestrationServiceStats();            
 
             if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                this.queueManager = new StorageQueueManager(settings, stats);
+                this.queueManager = new StorageQueueManager(settings, stats, this.telemetryClient);
             else
-                this.queueManager = new CosmosDBQueueManager(settings, stats);
+                this.queueManager = new CosmosDBQueueManager(settings, stats, this.telemetryClient);
 
             if (customInstanceStore == null)
             {
@@ -163,6 +180,7 @@ namespace DurableTask.AzureStorage
                     settings.CosmosDBAuthKey,
                     settings.CosmosDBName,
                     settings.CosmosDBLeaseManagementCollection,
+                    settings.CosmosDBLeaseManagementUsePartition,
                     settings.LeaseInterval,
                     settings.LeaseRenewInterval,
                     this.stats);
@@ -253,27 +271,32 @@ namespace DurableTask.AzureStorage
             return this.taskHubCreator.Value;
         }
 
+        IDisposable MonitorDependency(string dependencyType) => new CosmosDB.Monitoring.TelemetryRecorder(this.telemetryClient, dependencyType);
+
         // Internal logic used by the lazy taskHubCreator
         async Task GetTaskHubCreatorTask()
         {
-            var hubInfo = TaskHubInfo.GetTaskHubInfo(this.settings.TaskHubName, this.settings.PartitionCount);
-            await this.leaseManager.CreateLeaseStoreIfNotExistsAsync(hubInfo);
-            this.stats.StorageRequests.Increment();
-
-            var tasks = new List<Task>();
-
-            tasks.Add(this.trackingStore.CreateAsync());
-
-            tasks.Add(this.WorkItemQueue.CreateIfNotExistsAsync());
-
-            foreach (var controlQueue in this.AllControlQueues)
+            using (MonitorDependency(nameof(GetTaskHubCreatorTask)))
             {
-                tasks.Add(controlQueue.CreateIfNotExistsAsync());
-                tasks.Add(this.leaseManager.CreateLeaseIfNotExistAsync(controlQueue.Name));
-            }
+                var hubInfo = TaskHubInfo.GetTaskHubInfo(this.settings.TaskHubName, this.settings.PartitionCount);
+                await this.leaseManager.CreateLeaseStoreIfNotExistsAsync(hubInfo);
+                this.stats.StorageRequests.Increment();
 
-            await Task.WhenAll(tasks.ToArray());
-            this.stats.StorageRequests.Increment(tasks.Count);
+                var tasks = new List<Task>();
+
+                tasks.Add(this.trackingStore.CreateAsync());
+
+                tasks.Add(this.WorkItemQueue.CreateIfNotExistsAsync());
+
+                foreach (var controlQueue in this.AllControlQueues)
+                {
+                    tasks.Add(controlQueue.CreateIfNotExistsAsync());
+                    tasks.Add(this.leaseManager.CreateLeaseIfNotExistAsync(controlQueue.Name));
+                }
+
+                await Task.WhenAll(tasks.ToArray());
+                this.stats.StorageRequests.Increment(tasks.Count);
+            }
         }
 
         /// <summary>
@@ -494,7 +517,7 @@ namespace DurableTask.AzureStorage
             await this.EnsuredCreatedIfNotExistsAsync();
 
             Stopwatch receiveTimeoutStopwatch = Stopwatch.StartNew();
-            PendingMessageBatch nextBatch;
+            PendingMessageBatch nextBatch = null;
             while (true)
             {
                 List<MessageData> messages = null;
@@ -502,13 +525,17 @@ namespace DurableTask.AzureStorage
                 // Stop dequeuing messages if the buffer gets too full.
                 if (this.stats.PendingOrchestratorMessages.Value < this.settings.ControlQueueBufferThreshold)
                 {
-                    messages = await this.queueManager.GetMessagesAsync(cancellationToken);
+                    using (MonitorDependency("queueManager.GetMessagesAsync"))
+                    {
+                        messages = await this.queueManager.GetMessagesAsync(cancellationToken);
+                    }
                     
                     this.stats.MessagesRead.Increment(messages.Count);
                     this.stats.PendingOrchestratorMessages.Increment(messages.Count);
                 }
 
-                nextBatch = this.StashMessagesAndGetNextBatch(messages);
+                nextBatch = this.StashMessagesAndGetNextBatch((IEnumerable<MessageData>)messages ?? new MessageData[0]);
+
                 if (nextBatch != null)
                 {
                     break;
@@ -659,7 +686,8 @@ namespace DurableTask.AzureStorage
             string expectedExecutionId,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            return new OrchestrationRuntimeState(await this.trackingStore.GetHistoryEventsAsync(instanceId, expectedExecutionId, cancellationToken));
+            using (MonitorDependency(nameof(GetOrchestrationRuntimeStateAsync)))
+                return new OrchestrationRuntimeState(await this.trackingStore.GetHistoryEventsAsync(instanceId, expectedExecutionId, cancellationToken));
         }
 
         /// <inheritdoc />
@@ -688,7 +716,8 @@ namespace DurableTask.AzureStorage
             string instanceId = workItem.InstanceId;
             string executionId = runtimeState.OrchestrationInstance.ExecutionId;
 
-            await this.trackingStore.UpdateStateAsync(runtimeState, instanceId, executionId);
+            using (MonitorDependency("trackingStore.UpdateStateAsync"))
+                await this.trackingStore.UpdateStateAsync(runtimeState, instanceId, executionId);
 
             bool addedControlMessages = false;
             bool addedWorkItemMessages = false;
@@ -1418,5 +1447,41 @@ namespace DurableTask.AzureStorage
                 this.lazy = new Lazy<T>(this.valueFactory, this.threadSafetyMode);
             }
         }
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        /// <param name="disposing"></param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    // TODO: dispose managed state (managed objects).
+                }
+
+                // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
+                // TODO: set large fields to null.
+
+                disposedValue = true;
+            }
+        }
+
+        
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+            Dispose(true);
+            // TODO: uncomment the following line if the finalizer is overridden above.
+            // GC.SuppressFinalize(this);
+        }
+        #endregion
     }
 }

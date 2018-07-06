@@ -1,4 +1,5 @@
 ﻿using DurableTask.AzureStorage;
+using DurableTask.CosmosDB;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -6,17 +7,16 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DurableTask.CosmosDB.Tests
+namespace DurableTask.ConsoleTester
 {
     public static class TestHelpers
     {
         const string LeaseManagementCollectionName = "unitTestLeaseManagement";
 
-        public static TestOrchestrationHost GetTestOrchestrationHost(OrchestrationBackendType orchestrationBackendType = OrchestrationBackendType.Storage)
+        public static TestOrchestrationHost GetTestOrchestrationHost(OrchestrationBackendType orchestrationBackendType = OrchestrationBackendType.Storage, string workerId = null)
         {
             string storageConnectionString = orchestrationBackendType == OrchestrationBackendType.Storage ? GetTestStorageAccountConnectionString() : null;
             var leaseManagementCollection = orchestrationBackendType == OrchestrationBackendType.Storage ? null : LeaseManagementCollectionName;
-
             var settings = new StorageOrchestrationServiceSettings
             {
                 StorageConnectionString = storageConnectionString,
@@ -24,10 +24,13 @@ namespace DurableTask.CosmosDB.Tests
                 CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
                 CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
                 CosmosDBQueueUsePartition = ConfigurationManager.AppSettings.Get("CosmosDBQueueUsePartition")?.ToLower() == "true",
-                CosmosDBLeaseManagementCollection = leaseManagementCollection,
                 CosmosDBLeaseManagementUsePartition = ConfigurationManager.AppSettings.Get("CosmosDBLeaseManagementUsePartition")?.ToLower() == "true",
+                CosmosDBLeaseManagementCollection = leaseManagementCollection,
                 ApplicationInsightsInstrumentationKey = ConfigurationManager.AppSettings.Get("APPINSIGHTS_INSTRUMENTATIONKEY"),
             };
+
+            if (!string.IsNullOrEmpty(workerId))
+                settings.WorkerId = workerId;
 
             if (int.TryParse(ConfigurationManager.AppSettings.Get("CosmosDBQueueCollectionThroughput"), out var cosmosDBQueueCollectionThroughput))
             {
@@ -37,7 +40,7 @@ namespace DurableTask.CosmosDB.Tests
 
             var service = new ExtensibleOrchestrationService(settings);
 
-            service.CreateAsync().GetAwaiter().GetResult();
+            service.CreateAsync(false).GetAwaiter().GetResult();
 
             return new TestOrchestrationHost(service);
         }

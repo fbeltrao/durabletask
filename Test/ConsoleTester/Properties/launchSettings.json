@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ConsoleTester": {
+      "commandName": "Project",
+      "commandLineArgs": "cosmosdb 1"
+    }
+  }
+}

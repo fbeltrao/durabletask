@@ -76,7 +76,7 @@ namespace DurableTask.CosmosDB
         /// Interval for which the lease is taken on Azure Blob representing a task hub partition.  If the lease is not renewed within this 
         /// interval, it will cause it to expire and ownership of the partition will move to another worker instance.
         /// </summary>
-        TimeSpan LeaseInterval { get; set; } 
+        TimeSpan LeaseInterval { get; set; }
 
         /// <summary>
         /// CosmosDB endpoint
@@ -97,5 +97,26 @@ namespace DurableTask.CosmosDB
         /// CosmosDB name
         /// </summary>
         string CosmosDBName { get; set; }
+
+        /// <summary>
+        /// Application Insights instrumentation key
+        /// </summary>
+        string ApplicationInsightsInstrumentationKey { get; set; }
+
+        /// <summary>
+        /// CosmosDB queue collection throughput
+        /// </summary>
+        int CosmosDBQueueCollectionThroughput { get; set; }
+
+        /// <summary>
+        /// Flag to use or not a partition key in queue collection
+        /// </summary>
+        bool CosmosDBQueueUsePartition { get; }
+
+        /// <summary>
+        /// Flag to use or not a partition key in lease management collection
+        /// </summary>
+        bool CosmosDBLeaseManagementUsePartition { get; }
+
     }
 }

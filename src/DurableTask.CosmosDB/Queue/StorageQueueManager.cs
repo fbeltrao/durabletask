@@ -23,6 +23,7 @@ namespace DurableTask.CosmosDB.Queue
     {
         private readonly IExtensibleOrchestrationServiceSettings settings;
         private readonly AzureStorageOrchestrationServiceStats stats;
+        private readonly Microsoft.ApplicationInsights.TelemetryClient telemetryClient;
         readonly CloudQueueClient queueClient;
 
         readonly ConcurrentDictionary<string, IQueue> ownedControlQueues;
@@ -38,10 +39,12 @@ namespace DurableTask.CosmosDB.Queue
         /// </summary>
         /// <param name="settings"></param>
         /// <param name="stats"></param>
-        internal StorageQueueManager(IExtensibleOrchestrationServiceSettings settings, AzureStorageOrchestrationServiceStats stats)
+        /// <param name="telemetryClient"></param>
+        internal StorageQueueManager(IExtensibleOrchestrationServiceSettings settings, AzureStorageOrchestrationServiceStats stats, Microsoft.ApplicationInsights.TelemetryClient telemetryClient)
         {
             this.settings = settings;
             this.stats = stats;
+            this.telemetryClient = telemetryClient;
             CloudStorageAccount account = CloudStorageAccount.Parse(settings.StorageConnectionString);
             this.storageAccountName = account.Credentials.AccountName;
             this.queueClient = account.CreateCloudQueueClient();
@@ -78,7 +81,8 @@ namespace DurableTask.CosmosDB.Queue
         public string StorageName => this.storageAccountName;
 
 
-   
+        IDisposable MonitorDependency(string dependencyType) => new Monitoring.TelemetryRecorder(this.telemetryClient, dependencyType);
+
 
         IQueue GetWorkItemQueue(CloudStorageAccount account)
         {
@@ -134,30 +138,33 @@ namespace DurableTask.CosmosDB.Queue
 
         public async Task<List<MessageData>> GetMessagesAsync(CancellationToken cancellationToken)
         {
-            var messages = new List<MessageData>();
+            using (MonitorDependency(nameof(GetMessagesAsync)))
+            {
+                var messages = new List<MessageData>();
 
-            await this.ownedControlQueues.Values.ParallelForEachAsync(
-                async delegate (IQueue controlQueue)
-                {
-                    var batch = await controlQueue.GetMessagesAsync(
-                        this.settings.ControlQueueBatchSize,
-                        this.settings.ControlQueueVisibilityTimeout,
-                        ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
-                        null /* operationContext */,
-                        cancellationToken);
-                    this.stats.StorageRequests.Increment();
-
-                    IEnumerable<MessageData> deserializedBatch = await Task.WhenAll(batch
-                        .OfType<CloudQueueMessageWrapper>()
-                        .Select(async m => await this.messageManager.DeserializeQueueMessageAsync(m.CloudQueueMessage, controlQueue.Name)));
-
-                    lock (messages)
+                await this.ownedControlQueues.Values.ParallelForEachAsync(
+                    async delegate (IQueue controlQueue)
                     {
-                        messages.AddRange(deserializedBatch);
-                    }
-                });
+                        var batch = await controlQueue.GetMessagesAsync(
+                            this.settings.ControlQueueBatchSize,
+                            this.settings.ControlQueueVisibilityTimeout,
+                            ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
+                            null /* operationContext */,
+                            cancellationToken);
+                        this.stats.StorageRequests.Increment();
 
-            return messages;
+                        IEnumerable<MessageData> deserializedBatch = await Task.WhenAll(batch
+                            .OfType<CloudQueueMessageWrapper>()
+                            .Select(async m => await this.messageManager.DeserializeQueueMessageAsync(m.CloudQueueMessage, controlQueue.Name)));
+
+                        lock (messages)
+                        {
+                            messages.AddRange(deserializedBatch);
+                        }
+                    });
+
+                return messages;
+            }
         }
 
         
@@ -198,60 +205,71 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task EnqueueMessageAsync(IQueue queue, ReceivedMessageContext context, TaskMessage taskMessage, TimeSpan? initialVisibilityDelay, QueueRequestOptions queueRequestOptions)
         {
-            CloudQueueMessage message = await CreateOutboundQueueMessageAsync(this.messageManager, taskMessage, queue.Name);
-            var wq = (CloudQueueWrapper)queue;
-            await wq.cloudQueue.AddMessageAsync(
-                message,
-                null /* timeToLive */,
-                initialVisibilityDelay,
-                queueRequestOptions,
-                context.StorageOperationContext);
+            using (MonitorDependency(nameof(EnqueueMessageAsync)))
+            {
+
+                CloudQueueMessage message = await CreateOutboundQueueMessageAsync(this.messageManager, taskMessage, queue.Name);
+                var wq = (CloudQueueWrapper)queue;
+                await wq.cloudQueue.AddMessageAsync(
+                    message,
+                    null /* timeToLive */,
+                    initialVisibilityDelay,
+                    queueRequestOptions,
+                    context.StorageOperationContext);
+            }
         }
 
         public async Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            var wq = (CloudQueueWrapper)queue;
-            var queueMessage = await wq.cloudQueue.GetMessageAsync(
-                    queueVisibilityTimeout,
-                    requestOptions,
-                    operationContext,
-                    cancellationToken);
-
-            this.stats.StorageRequests.Increment();
-
-            if (queueMessage != null)
+            using (MonitorDependency(nameof(GetMessageAsync)))
             {
-                ReceivedMessageContext context = await ReceivedMessageContext.CreateFromReceivedMessageAsync(
-                   this.messageManager,
-                   this.storageAccountName,
-                   this.settings.TaskHubName,
-                   queueMessage,
-                   queue.Name);
 
-                return context;
+                var wq = (CloudQueueWrapper)queue;
+                var queueMessage = await wq.cloudQueue.GetMessageAsync(
+                        queueVisibilityTimeout,
+                        requestOptions,
+                        operationContext,
+                        cancellationToken);
+
+                this.stats.StorageRequests.Increment();
+
+                if (queueMessage != null)
+                {
+                    ReceivedMessageContext context = await ReceivedMessageContext.CreateFromReceivedMessageAsync(
+                       this.messageManager,
+                       this.storageAccountName,
+                       this.settings.TaskHubName,
+                       queueMessage,
+                       queue.Name);
+
+                    return context;
+                }
+
+                return null;
             }
-
-            return null;
         }
 
         public async Task AddMessageAsync(IQueue queue, TaskMessage message, TimeSpan? timeToLive, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            var wq = (CloudQueueWrapper)queue;
-            var cloudQueueMessage = await CreateOutboundQueueMessageInternalAsync(
-                    this.messageManager,
-                    this.storageAccountName,
-                    this.settings.TaskHubName,
-                    queue.Name,
-                    message);
+            using (MonitorDependency(nameof(AddMessageAsync)))
+            {
+                var wq = (CloudQueueWrapper)queue;
+                var cloudQueueMessage = await CreateOutboundQueueMessageInternalAsync(
+                        this.messageManager,
+                        this.storageAccountName,
+                        this.settings.TaskHubName,
+                        queue.Name,
+                        message);
 
-            await wq.cloudQueue.AddMessageAsync(
-                cloudQueueMessage,
-                timeToLive,
-                initialVisibilityDelay,
-                requestOptions,
-                operationContext);
+                await wq.cloudQueue.AddMessageAsync(
+                    cloudQueueMessage,
+                    timeToLive,
+                    initialVisibilityDelay,
+                    requestOptions,
+                    operationContext);
 
-            this.stats.StorageRequests.Increment();
+                this.stats.StorageRequests.Increment();
+            }
         }
 
         /// <inheritdoc />

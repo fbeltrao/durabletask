@@ -1,5 +1,7 @@
-﻿using System;
+﻿using Microsoft.Azure.Documents;
+using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Text;
 
 namespace DurableTask.CosmosDB
@@ -34,5 +36,20 @@ namespace DurableTask.CosmosDB
         /// Default is 400
         /// </summary>
         public int Throughput { get; set; } = 400;
+
+        /// <summary>
+        /// Partition key paths for the collection
+        /// </summary>
+        public Collection<string> PartitionKeyPaths { get; set; }
+
+        /// <summary>
+        /// Included index paths
+        /// </summary>
+        public IEnumerable<IncludedPath> IndexIncludedPaths { get; set; }
+
+        /// <summary>
+        /// Excluded index paths
+        /// </summary>
+        public IEnumerable<ExcludedPath> IndexExcludedPaths { get; set; }
     }
 }
