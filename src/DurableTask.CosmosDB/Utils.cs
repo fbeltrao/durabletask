@@ -53,14 +53,15 @@ namespace DurableTask.AzureStorage
         /// visit: https://azure.microsoft.com/en-us/pricing/details/cosmos-db/
         /// </summary>
         /// <returns>A Task to allow asynchronous execution</returns>
-        internal static async Task CreateCollectionIfNotExists(CosmosDBCollectionDefinition collectionDefinition)
-        { 
+        internal static async Task CreateCollectionIfNotExists(CosmosDBCollectionDefinition collectionDefinition, string collectionName = null)
+        {
+            collectionName = collectionName ?? collectionDefinition.CollectionName;
             // connecting client 
             using (var client = new DocumentClient(new Uri(collectionDefinition.Endpoint), collectionDefinition.SecretKey))
             {
                 await client.CreateDatabaseIfNotExistsAsync(new Database { Id = collectionDefinition.DbName });
 
-                var documentCollection = new DocumentCollection { Id = collectionDefinition.CollectionName };
+                var documentCollection = new DocumentCollection { Id = collectionName };
 
                 if (collectionDefinition.PartitionKeyPaths?.Count > 0)
                 {

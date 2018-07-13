@@ -18,14 +18,14 @@ using System;
 namespace DurableTask.AzureStorage
 {
     /// <summary>
-    /// CosmosDB lease
+    /// SqlLease lease
     /// </summary>
-    class CosmosDBLease : Lease
+    class SqlLease : Lease
     {
         /// <summary>
         /// Constructor
         /// </summary>
-        public CosmosDBLease()
+        public SqlLease()
         {
 
         }
@@ -34,33 +34,17 @@ namespace DurableTask.AzureStorage
         /// Copy constructor
         /// </summary>
         /// <param name="source"></param>
-        public CosmosDBLease(CosmosDBLease source) : base(source)
+        public SqlLease(SqlLease source) : base(source)
         {
             this.TaskHubName = source.TaskHubName;
             this.LeaseTimeout = source.LeaseTimeout;
-        }
-
-        /// <summary>
-        /// Document id
-        /// </summary>
-        [JsonProperty("id")]
-        public string Id
-        {
-            get { return this.PartitionId; }
-            set { this.PartitionId = value; }
-        }
+        }      
 
         /// <summary>
         /// Task hub name
         /// </summary>
         public string TaskHubName { get; set; }
 
-
-        /// <summary>
-        /// Document type: lease
-        /// Same collection has lease and taskHubInfo
-        /// </summary>
-        public string DocumentType { get; set; } = "lease";
 
         /// <summary>
         /// Lease timeout

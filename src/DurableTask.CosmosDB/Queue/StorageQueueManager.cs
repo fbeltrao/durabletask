@@ -2,6 +2,7 @@
 using DurableTask.AzureStorage.Monitoring;
 using DurableTask.AzureStorage.Partitioning;
 using DurableTask.Core;
+using DurableTask.CosmosDB.Monitoring;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
 using Microsoft.WindowsAzure.Storage.Queue;
@@ -23,7 +24,6 @@ namespace DurableTask.CosmosDB.Queue
     {
         private readonly IExtensibleOrchestrationServiceSettings settings;
         private readonly AzureStorageOrchestrationServiceStats stats;
-        private readonly Microsoft.ApplicationInsights.TelemetryClient telemetryClient;
         readonly CloudQueueClient queueClient;
 
         readonly ConcurrentDictionary<string, IQueue> ownedControlQueues;
@@ -39,12 +39,10 @@ namespace DurableTask.CosmosDB.Queue
         /// </summary>
         /// <param name="settings"></param>
         /// <param name="stats"></param>
-        /// <param name="telemetryClient"></param>
-        internal StorageQueueManager(IExtensibleOrchestrationServiceSettings settings, AzureStorageOrchestrationServiceStats stats, Microsoft.ApplicationInsights.TelemetryClient telemetryClient)
+        internal StorageQueueManager(IExtensibleOrchestrationServiceSettings settings, AzureStorageOrchestrationServiceStats stats)
         {
             this.settings = settings;
             this.stats = stats;
-            this.telemetryClient = telemetryClient;
             CloudStorageAccount account = CloudStorageAccount.Parse(settings.StorageConnectionString);
             this.storageAccountName = account.Credentials.AccountName;
             this.queueClient = account.CreateCloudQueueClient();
@@ -81,7 +79,7 @@ namespace DurableTask.CosmosDB.Queue
         public string StorageName => this.storageAccountName;
 
 
-        IDisposable MonitorDependency(string dependencyType) => new Monitoring.TelemetryRecorder(this.telemetryClient, dependencyType);
+        IDisposable MonitorDependency(string dependencyType) => new Monitoring.TelemetryRecorder(TelemetryClientProvider.TelemetryClient, dependencyType);
 
 
         IQueue GetWorkItemQueue(CloudStorageAccount account)

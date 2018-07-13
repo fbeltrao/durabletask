@@ -182,13 +182,14 @@ namespace DurableTask.AzureStorage
                         {
                             PartitionKey = new PartitionKey(taskHubName)
                         })
+                        .Where(d => d.DocumentType == "lease")
                         .AsDocumentQuery();
                 }
                 else
                 {
                     feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
                         UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
-                        .Where(d => d.TaskHubName == taskHubName)
+                        .Where(d => d.TaskHubName == taskHubName && d.DocumentType == "lease")
                         .AsDocumentQuery();
                 }
 
@@ -530,6 +531,7 @@ namespace DurableTask.AzureStorage
 
                 await this.documentClient.UpsertDocumentAsync(
                     UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    cosmosDBLease,
                     requestOptions);
 
 
@@ -570,6 +572,12 @@ namespace DurableTask.AzureStorage
                     }
                 }
             }
+
+            /// <summary>
+            /// Document type: lease
+            /// Same collection has lease and taskHubInfo
+            /// </summary>
+            public string DocumentType { get; set; } = "taskHubInfo";
 
             public CosmosDBTaskHubInfoWrapper()
             {                

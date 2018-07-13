@@ -7,6 +7,7 @@ namespace DurableTask.ConsoleTester
     public enum OrchestrationBackendType
     {
         Storage,
-        CosmosDB
+        CosmosDB,
+        SQL
     }
 }

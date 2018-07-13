@@ -849,7 +849,6 @@ namespace DurableTask.CosmosDB.Tests
             Assert.IsInstanceOfType(result, typeof(CosmosDBQueueMessage));
             var qm = (CosmosDBQueueMessage)result;
             Assert.AreEqual(1, qm.DequeueCount);
-            Assert.AreEqual(QueueItemStatus.InProgress, qm.Status);
             Assert.AreEqual("testhub-control-00", qm.QueueName);
             Assert.AreEqual("7563dc12-6ba8-47be-9d9b-db70c58ebc08", qm.Id);
             Assert.IsNotNull(qm.Data);

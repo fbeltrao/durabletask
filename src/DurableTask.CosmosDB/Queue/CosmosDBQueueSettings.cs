@@ -9,5 +9,10 @@
         /// 
         /// </summary>
         public CosmosDBCollectionDefinition QueueCollectionDefinition { get; set; }
+        
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool UseOneCollectionPerQueueType { get; internal set; }
     }
 }

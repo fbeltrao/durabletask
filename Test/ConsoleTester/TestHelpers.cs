@@ -21,22 +21,49 @@ namespace DurableTask.ConsoleTester
             {
                 StorageConnectionString = storageConnectionString,
                 TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),
-                CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey"),
-                CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint"),
-                CosmosDBQueueUsePartition = ConfigurationManager.AppSettings.Get("CosmosDBQueueUsePartition")?.ToLower() == "true",
-                CosmosDBLeaseManagementUsePartition = ConfigurationManager.AppSettings.Get("CosmosDBLeaseManagementUsePartition")?.ToLower() == "true",
-                CosmosDBLeaseManagementCollection = leaseManagementCollection,
                 ApplicationInsightsInstrumentationKey = ConfigurationManager.AppSettings.Get("APPINSIGHTS_INSTRUMENTATIONKEY"),
             };
+
+            switch (orchestrationBackendType)
+            {
+                case OrchestrationBackendType.SQL:
+                    {
+                        settings.SqlConnectionString = ConfigurationManager.AppSettings.Get("SqlConnectionString");
+                        settings.SqlQueueUseMemoryOptimizedTable = ConfigurationManager.AppSettings.Get("SqlQueueUseMemoryOptimizedTable")?.ToLower() == "true";
+
+
+                    }
+                    break;
+
+                case OrchestrationBackendType.CosmosDB:
+                    {
+                        settings.CosmosDBAuthKey = ConfigurationManager.AppSettings.Get("CosmosDBAuthKey");
+                        settings.CosmosDBEndpoint = ConfigurationManager.AppSettings.Get("CosmosDBEndpoint");
+                        settings.CosmosDBQueueUsePartition = ConfigurationManager.AppSettings.Get("CosmosDBQueueUsePartition")?.ToLower() == "true";
+                        settings.CosmosDBQueueUseOneCollectionPerQueueType = ConfigurationManager.AppSettings.Get("CosmosDBQueueUseOneCollectionPerQueueType")?.ToLower() == "true";
+                        settings.CosmosDBLeaseManagementUsePartition = ConfigurationManager.AppSettings.Get("CosmosDBLeaseManagementUsePartition")?.ToLower() == "true";
+                        settings.CosmosDBLeaseManagementCollection = leaseManagementCollection;
+
+                        if (int.TryParse(ConfigurationManager.AppSettings.Get("CosmosDBQueueCollectionThroughput"), out var cosmosDBQueueCollectionThroughput))
+                        {
+                            if (cosmosDBQueueCollectionThroughput >= 400)
+                                settings.CosmosDBQueueCollectionThroughput = cosmosDBQueueCollectionThroughput;
+                        }
+
+                        break;
+                    }
+            }
+
+            if (int.TryParse(ConfigurationManager.AppSettings.Get("PartitionCount"), out var partitionCount))
+            {
+                settings.PartitionCount = partitionCount;
+            }
 
             if (!string.IsNullOrEmpty(workerId))
                 settings.WorkerId = workerId;
 
-            if (int.TryParse(ConfigurationManager.AppSettings.Get("CosmosDBQueueCollectionThroughput"), out var cosmosDBQueueCollectionThroughput))
-            {
-                if (cosmosDBQueueCollectionThroughput >= 400)
-                    settings.CosmosDBQueueCollectionThroughput = cosmosDBQueueCollectionThroughput;
-            }
+
+
 
             var service = new ExtensibleOrchestrationService(settings);
 

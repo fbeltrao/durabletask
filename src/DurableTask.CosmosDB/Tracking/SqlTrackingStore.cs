@@ -31,29 +31,14 @@ namespace DurableTask.CosmosDB.Tracking
     using System.Reflection;
     using System.Runtime.Serialization;
     using System.Diagnostics;
+    using System.Data.SqlClient;
 
-    class CosmosDbTrackingStore : TrackingStoreBase, IDisposable
+    class SqlTrackingStore : TrackingStoreBase
     {
-        private readonly DocumentClient documentClient;
-        private string instancesCollectionName;
-        private string historyCollectionName;
-        private string DatabaseName;
         readonly IReadOnlyDictionary<EventType, Type> eventTypeMap;
-
-        public Microsoft.WindowsAzure.Storage.Table.CloudTable HistoryTable { get; internal set; }
-
-        public CosmosDbTrackingStore(string endpoint, string key, string instanceCollection, string historyCollection, string databaseName)
+        private readonly string connectionString;        
+        public SqlTrackingStore(string connectionString)
         {
-            this.documentClient = new DocumentClient(new Uri(endpoint), key, new JsonSerializerSettings()
-            {
-                TypeNameHandling = TypeNameHandling.All,
-            });
-
-
-            this.instancesCollectionName = instanceCollection;
-            this.historyCollectionName = historyCollection;
-            this.DatabaseName = databaseName;
-
             Type historyEventType = typeof(HistoryEvent);
 
             IEnumerable<Type> historyEventTypes = historyEventType.Assembly.GetTypes().Where(
@@ -62,58 +47,13 @@ namespace DurableTask.CosmosDB.Tracking
             PropertyInfo eventTypeProperty = historyEventType.GetProperty(nameof(HistoryEvent.EventType));
             this.eventTypeMap = historyEventTypes.ToDictionary(
                 type => ((HistoryEvent)FormatterServices.GetUninitializedObject(type)).EventType);
+            this.connectionString = connectionString;
         }
 
-        public override async Task CreateAsync()
+        public override Task CreateAsync()
         {
-            var instanceCollection = new DocumentCollection()
-            {
-                Id = this.instancesCollectionName,
-            };
-
-            // index only instanceId column
-            instanceCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "/*" });
-            instanceCollection.IndexingPolicy.IncludedPaths.Add(new IncludedPath()
-            {
-                Path = $"/instanceId/?",
-                Indexes = new System.Collections.ObjectModel.Collection<Index>()
-                {
-                    new HashIndex(DataType.String, -1)
-                }
-            });
-
-            instanceCollection.PartitionKey.Paths.Add("/instanceId");
-
-            await documentClient.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseName),
-                instanceCollection,
-                new RequestOptions { OfferThroughput = 10000 });
-
-
-            var historyCollection = new DocumentCollection()
-            {
-                Id = this.historyCollectionName,
-            };
-
-            // index only instanceId column
-            historyCollection.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath() { Path = "/*" });
-            historyCollection.IndexingPolicy.IncludedPaths.Add(new IncludedPath()
-            {
-                Path = $"/instanceId/?",
-                Indexes = new System.Collections.ObjectModel.Collection<Index>()
-                {
-                    new HashIndex(DataType.String, -1)
-                }
-            });
-
-
-            historyCollection.PartitionKey.Paths.Add("/instanceId");
-
-            await documentClient.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseName),
-                historyCollection,
-                new RequestOptions { OfferThroughput = 10000 });
-
+            // TODO: create tables
+            return Task.FromResult(0);
         }
 
         public override Task DeleteAsync()
@@ -131,15 +71,10 @@ namespace DurableTask.CosmosDB.Tracking
             return Task.FromResult(0);
         }
 
-        public override async Task<bool> ExistsAsync()
+        public override Task<bool> ExistsAsync()
         {
-            bool result = false;
-            var instanceCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            var historyCollection = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
-            var instanceCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(instanceCollection);
-            var historyCollectionValue = await this.documentClient.ReadDocumentCollectionAsync(historyCollection);
-            result = instanceCollectionValue.Resource != null && historyCollectionValue.Resource != null;
-            return result;
+            // TODO: check if tables exist
+            return Task.FromResult(true);
         }
 
         public override async Task<IList<HistoryEvent>> GetHistoryEventsAsync(string instanceId, string expectedExecutionId, CancellationToken cancellationToken = default)
@@ -214,23 +149,30 @@ namespace DurableTask.CosmosDB.Tracking
             return result;
         }
 
+        SqlConnection GetConnection() => new SqlConnection(connectionString);
+
         private async Task<OrchestrationStateDocument> GetDocumentStateAsync(string instanceId)
         {
             OrchestrationStateDocument result = null;
 
-            var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
+            object resultColumnValue = null;
+            using (var conn = GetConnection())
             {
-                PartitionKey = new PartitionKey(instanceId)
+                var cmd = new SqlCommand("up_instance_Get", conn)
+                {
+                    CommandType = System.Data.CommandType.StoredProcedure
+                };
 
-            })
-                .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
+                cmd.Parameters.Add(new System.Data.SqlClient.SqlParameter("@instanceId", instanceId) { SqlDbType = System.Data.SqlDbType.VarChar, Size = 100 });
+                await conn.OpenAsync();
 
-            var list = await query.ExecuteNextAsync<OrchestrationStateDocument>();
 
-            if (list != null && list.Count > 0)
+                resultColumnValue = await cmd.ExecuteScalarAsync();                
+            }
+
+            if (resultColumnValue != null && !Convert.IsDBNull(resultColumnValue))
             {
-                result = list.FirstOrDefault();
+                result = JsonConvert.DeserializeObject<OrchestrationStateDocument>((string)resultColumnValue);
             }
 
             return result;
@@ -254,7 +196,7 @@ namespace DurableTask.CosmosDB.Tracking
                 value.Executions = new Dictionary<string, OrchestrationState>();
             }
             
-            value.Executions[executionStartedEvent.OrchestrationInstance.ExecutionId] =  new OrchestrationState()
+            value.Executions[executionStartedEvent.OrchestrationInstance.ExecutionId] = new OrchestrationState()
             {
                 OrchestrationInstance = new OrchestrationInstance
                 {
@@ -274,45 +216,63 @@ namespace DurableTask.CosmosDB.Tracking
             await UpsertOrchestrationState(value);
         }
 
-        private async Task<ResourceResponse<Document>> UpsertOrchestrationState(OrchestrationStateDocument value)
+        private async Task UpsertOrchestrationState(OrchestrationStateDocument value)
         {
-            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.instancesCollectionName);
-            return await documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
+            using (var conn = GetConnection())
             {
-                PartitionKey = new PartitionKey(value.InstanceId)
-            });
+                var cmd = new SqlCommand("up_instance_Upsert", conn)
+                {
+                    CommandType = System.Data.CommandType.StoredProcedure
+                };
+
+                cmd.Parameters.Add(new System.Data.SqlClient.SqlParameter("@instanceId", value.InstanceId) { SqlDbType = System.Data.SqlDbType.VarChar, Size = 100 });
+                cmd.Parameters.Add(new System.Data.SqlClient.SqlParameter("@data", JsonConvert.SerializeObject(value)) { SqlDbType = System.Data.SqlDbType.NVarChar, Size = -1 });
+                await conn.OpenAsync();
+
+                await cmd.ExecuteNonQueryAsync();
+            }
         }
 
-        private async Task<ResourceResponse<Document>> SaveHistoryDocument(OrchestrationTrackDocument value)
+        private async Task SaveHistoryDocument(OrchestrationTrackDocument value)
         {
-            var documentUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
-            return await documentClient.UpsertDocumentAsync(documentUri, value, new RequestOptions()
+
+            using (var conn = GetConnection())
             {
-                PartitionKey = new PartitionKey(value.InstanceId)
-            });
+                var cmd = new SqlCommand("up_history_Upsert", conn)
+                {
+                    CommandType = System.Data.CommandType.StoredProcedure
+                };
+
+                cmd.Parameters.Add(new System.Data.SqlClient.SqlParameter("@instanceId", value.InstanceId) { SqlDbType = System.Data.SqlDbType.VarChar, Size = 100 });
+                cmd.Parameters.Add(new System.Data.SqlClient.SqlParameter("@data", JsonConvert.SerializeObject(value)) { SqlDbType = System.Data.SqlDbType.NVarChar, Size = -1 });
+                await conn.OpenAsync();
+
+                await cmd.ExecuteNonQueryAsync();
+            }
         }
 
         private async Task<OrchestrationTrackDocument> GetHistoryDocument(string instanceId)
         {
             OrchestrationTrackDocument result = null;
 
-            if (!string.IsNullOrEmpty(instanceId))
+            object resultColumnValue = null;
+            using (var conn = GetConnection())
             {
-                var collectionUri = UriFactory.CreateDocumentCollectionUri(DatabaseName, this.historyCollectionName);
-
-                var query = this.documentClient.CreateDocumentQuery<OrchestrationStateDocument>(collectionUri, new FeedOptions()
+                var cmd = new SqlCommand("up_history_Get", conn)
                 {
-                    PartitionKey = new PartitionKey(instanceId)
+                    CommandType = System.Data.CommandType.StoredProcedure
+                };
 
-                })
-                    .Where(p => p.InstanceId == instanceId).AsDocumentQuery();
+                cmd.Parameters.Add(new System.Data.SqlClient.SqlParameter("@instanceId", instanceId) { SqlDbType = System.Data.SqlDbType.VarChar, Size = 100 });
+                await conn.OpenAsync();
 
-                var list = await query.ExecuteNextAsync<OrchestrationTrackDocument>();
 
-                if (list != null && list.Count > 0)
-                {
-                    result = list.FirstOrDefault();
-                }
+                resultColumnValue = await cmd.ExecuteScalarAsync();
+            }
+
+            if (resultColumnValue != null && !Convert.IsDBNull(resultColumnValue))
+            {
+                result = JsonConvert.DeserializeObject<OrchestrationTrackDocument>((string)resultColumnValue);
             }
 
             return result;
@@ -430,14 +390,6 @@ namespace DurableTask.CosmosDB.Tracking
 
             value.SetPropertyValue("executions", value.Executions);
             await UpsertOrchestrationState(value);            
-        }
-
-        public void Dispose()
-        {
-            if (this.documentClient != null)
-            {
-                this.documentClient.Dispose();
-            }
-        }
+        }        
     }
 }

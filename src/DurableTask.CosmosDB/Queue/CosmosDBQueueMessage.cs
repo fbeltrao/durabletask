@@ -23,7 +23,7 @@ namespace DurableTask.CosmosDB.Queue
 
         public long NextVisibleTime { get; set; }
         
-        public long LockedUntil { get; set; }
+        public long NextAvailableTime { get; set; }
 
         [JsonProperty("id")]
         public string Id { get; set; }
@@ -32,15 +32,14 @@ namespace DurableTask.CosmosDB.Queue
 
         public object Data { get; set; }
 
-        [JsonConverter(typeof(StringEnumConverter))]
-        public QueueItemStatus Status { get; set; }
 
-
-        [JsonIgnore]
+        [JsonProperty("_etag", NullValueHandling = NullValueHandling.Ignore)]
         public string ETag { get; set; }
 
         public string QueueName { get;  set; }
-        
+
+        public string PartitionKey { get; set; }
+
         // used to set expiration policy
         [JsonProperty(PropertyName = "ttl", NullValueHandling = NullValueHandling.Ignore)]
         public int? TimeToLive { get; set; }

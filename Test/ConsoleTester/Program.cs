@@ -8,18 +8,9 @@ namespace DurableTask.ConsoleTester
 {
     class Program
     {
-        static TestOrchestrationHost CreateCosmosDBOrchestrationHost(string workerId)
+        static TestOrchestrationHost CreateOrchestrationHost(string workerId, OrchestrationBackendType backendType)
         {
-            var host = TestHelpers.GetTestOrchestrationHost(OrchestrationBackendType.CosmosDB, workerId);
-            host.StartAsync().GetAwaiter().GetResult();
-            host.RegisterOrchestrationTypes(typeof(ParallelActivityProcessing));
-            return host;
-        }
-
-
-        static TestOrchestrationHost CreateStorageOrchestrationHost(string workerId)
-        {
-            var host = TestHelpers.GetTestOrchestrationHost(OrchestrationBackendType.Storage, workerId);
+            var host = TestHelpers.GetTestOrchestrationHost(backendType, workerId);
             host.StartAsync().GetAwaiter().GetResult();
             host.RegisterOrchestrationTypes(typeof(ParallelActivityProcessing));
             return host;
@@ -30,37 +21,53 @@ namespace DurableTask.ConsoleTester
             var isWorker = (args.Length >= 2 && args[1].ToLower() == "worker");
             var workerId = (isWorker && args.Length >= 3) ? args[2] : null;
 
-            var host = (args.Length >= 1 && args[0] == "storage") ? CreateStorageOrchestrationHost(workerId) : CreateCosmosDBOrchestrationHost(workerId);
+            var backendTypeParameterValue = (args.Length >= 1) ? args[0] : "cosmosdb";
+
+            var backendType = OrchestrationBackendType.CosmosDB;
+            switch (backendTypeParameterValue.ToLower())
+            {
+                case "storage":
+                    backendType = OrchestrationBackendType.Storage;
+                    break;
+
+                case "sql":
+                    backendType = OrchestrationBackendType.SQL;
+                    break;
+            }
+
+            var host = CreateOrchestrationHost(workerId, backendType);
+
             var instancesCount = 3;
-            if (args.Length >= 2)                
+            if (args.Length >= 2)
                 int.TryParse(args[1], out instancesCount);
-            
+
 
             //var host = StorageOrchestrationHost.Value;
 
-            
+
             try
             {
-                Console.WriteLine("Starting...");
+                Console.WriteLine($"[{DateTime.Now.ToString()}] Starting {backendType} id={workerId}...");
                 if (!isWorker)
                 {
                     var stopwatch = Stopwatch.StartNew();
-                    var tasks = new List<Task>();
+                    var tasks = new Task[instancesCount];
                     for (var i = 0; i < instancesCount; ++i)
                     {
-                        tasks.Add(ParallelActivityProcessing(host, 10));
+                        tasks[i] = ParallelActivityProcessing(host, 10);
                     }
+
 
                     await Task.WhenAll(tasks);
                     stopwatch.Stop();
-                    Console.WriteLine($"Finished {host.GetType().Name} in {stopwatch.ElapsedMilliseconds}ms");
+                    Console.WriteLine($"[{DateTime.Now.ToString()}] Finished {host.GetType().Name} in {stopwatch.ElapsedMilliseconds}ms");
                 }
                 else
                 {
-                    Console.WriteLine("Press <ENTER> to exit");
+                    Console.WriteLine($"[{DateTime.Now.ToString()}] Press <ENTER> to exit");
                     Console.ReadLine();
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -69,19 +76,66 @@ namespace DurableTask.ConsoleTester
 
             if (Debugger.IsAttached && !isWorker)
                 Console.ReadLine();
-            
+
         }
 
         public static async Task ParallelActivityProcessing(TestOrchestrationHost host, int activityCount = Constants.ACTIVITY_COUNT)
         {
-            var client = await host.StartOrchestrationAsync(typeof(ParallelActivityProcessing), activityCount);
-            await Task.Delay(1000 * 5); // wait 5 seconds
+            TestOrchestrationClient client = null;
 
-            var status = await client.GetStatusAsync();
-            while (status?.OrchestrationStatus != OrchestrationStatus.Completed)
+            try
             {
+                client = await host.StartOrchestrationAsync(typeof(ParallelActivityProcessing), activityCount);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Unexpected error starting orchestration: {ex.ToString()}");
+                return;
+            }
+
+            while (true)
+            {
+
                 await Task.Delay(1000 * 5); // wait 5 seconds
-                status = await client.GetStatusAsync();
+
+                try
+                {
+                    var stop = false;
+
+                    var status = await client.GetStatusAsync();
+                    if (status != null)
+                    {
+                        switch (status.OrchestrationStatus)
+                        {
+                            case OrchestrationStatus.Completed:
+                                stop = true;
+                                break;
+
+                            case OrchestrationStatus.Running:
+                            case OrchestrationStatus.Pending:
+                                break;
+
+                            default:
+                                {
+                                    stop = true;
+                                    Console.WriteLine($"Unexpected status : {status.ToString()}");
+                                    break;
+                                }
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Unexpected status == null");
+                        stop = true;
+                    }
+
+                    if (stop)
+                        break;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error getting orchestration status: {ex.ToString()}");
+                }
             }
 
             //Assert.AreEqual(OrchestrationStatus.Completed, status?.OrchestrationStatus);

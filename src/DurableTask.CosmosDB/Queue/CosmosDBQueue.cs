@@ -1,5 +1,6 @@
 ﻿using DurableTask.AzureStorage;
 using DurableTask.Core;
+using DurableTask.CosmosDB.Monitoring;
 using DurableTask.CosmosDB.Queue;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
@@ -24,10 +25,12 @@ namespace DurableTask.CosmosDB
     {
         private readonly bool queueIsPartitioned;
         private CosmosDBQueueSettings settings;
-        DocumentClient documentClientWithSerializationSettings;
-        DocumentClient documentClientWithoutSerializationSettings;
+        DocumentClient documentClient;
         bool initialized = false;
         private readonly string queueName;
+        private readonly bool isControlQueue;
+        private readonly string collectionName;
+        JsonSerializerSettings jsonSerializerSettings;
         //const int MaxTaskMessageLength = 200000;
 
         /// <summary>
@@ -47,11 +50,17 @@ namespace DurableTask.CosmosDB
         /// <summary>
         /// Constructor
         /// </summary>
-        public CosmosDBQueue(CosmosDBQueueSettings settings, string name)
+        public CosmosDBQueue(CosmosDBQueueSettings settings, string name, bool isControlQueue)
         {
-            this.queueIsPartitioned = settings.QueueCollectionDefinition.PartitionKeyPaths?.Count > 0;
+            this.queueIsPartitioned = !isControlQueue && settings.QueueCollectionDefinition.PartitionKeyPaths?.Count > 0;
             this.settings = settings;
             this.queueName = name;
+            this.isControlQueue = isControlQueue;
+            this.collectionName = this.settings.QueueCollectionDefinition.CollectionName;
+            if (settings.UseOneCollectionPerQueueType)
+            {
+                this.collectionName = $"{this.settings.QueueCollectionDefinition.CollectionName}-{(isControlQueue ? "control" : "workitem")}";
+            }
         }
 
 
@@ -64,58 +73,67 @@ namespace DurableTask.CosmosDB
         /// <returns></returns>
         internal async Task<CosmosDBQueueMessage> Enqueue(CosmosDBQueueMessage message)
         {
-            if (!this.initialized)            
+            if (!this.initialized)
                 throw new InvalidOperationException("Must call Initialize() first");
 
             message.QueueName = this.queueName;
             message.CreatedDate = Utils.ToUnixTime(DateTime.UtcNow);
             if (message.NextVisibleTime <= 0)
                 message.NextVisibleTime = Utils.ToUnixTime(DateTime.UtcNow);
-            var uri = UriFactory.CreateDocumentCollectionUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName);
+            message.NextAvailableTime = message.NextVisibleTime;
+
+            var uri = UriFactory.CreateDocumentCollectionUri(this.settings.QueueCollectionDefinition.DbName, this.collectionName);
 
             var res = await SaveQueueItem(message);
 
             message.ETag = res.Resource.ETag;
-            message.Id = res.Resource.Id;            
+            message.Id = res.Resource.Id;
 
             return message;
         }
 
-        /// <inheritdoc />
-        public async Task<IEnumerable<IQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
+        async Task<IEnumerable<IQueueMessage>> DequeueAsync(int batchSize, TimeSpan visibilityTimeout, string partitionKey, CancellationToken cancellationToken)
         {
             StoredProcedureResponse<string> response = null;
             try
             {
-                controlQueueBatchSize = Math.Max(controlQueueBatchSize, 20);
                 var storedProceduredName = queueIsPartitioned ? DequeueItemsByPartitionStoredProcedureName : DequeueItemsStoredProcedureName;
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, storedProceduredName);
-                var queueVisibilityParameterValue = Utils.ToUnixTime(DateTime.UtcNow.Add(controlQueueVisibilityTimeout));
+                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.collectionName, storedProceduredName);
+                var queueVisibilityParameterValue = Utils.ToUnixTime(DateTime.UtcNow);
 
                 RequestOptions cosmosDbRequestOptions = null;
-                if (queueIsPartitioned)
+                if (this.queueIsPartitioned)
                 {
                     cosmosDbRequestOptions = new RequestOptions
                     {
-                        PartitionKey = new PartitionKey(this.queueName)
+                        PartitionKey = new PartitionKey(partitionKey)
                     };
                 }
 
-                response = await this.documentClientWithoutSerializationSettings.ExecuteStoredProcedureAsync<string>(
-                    storedProcedureUri,
-                    cosmosDbRequestOptions,
-                    controlQueueBatchSize,
-                    queueVisibilityParameterValue,
-                    this.QueueItemLockInSeconds,
-                    this.queueName);
+
+                using (var recorded = new TelemetryRecorder(nameof(documentClient.ExecuteStoredProcedureAsync), "CosmosDB.Queue"))
+                {
+                    response = await Utils.ExecuteWithRetries(() => this.documentClient.ExecuteStoredProcedureAsync<string>(
+                        storedProcedureUri,
+                        cosmosDbRequestOptions,
+                        batchSize,
+                        queueVisibilityParameterValue,
+                        (int)visibilityTimeout.TotalSeconds,
+                        this.queueName));
+
+
+                    recorded.AsSucceeded()
+                        .AddProperty(nameof(response.RequestCharge), response.RequestCharge.ToString())
+                        .AddProperty(nameof(queueName), this.queueName)
+                        .AddProperty(nameof(partitionKey), partitionKey)
+                        .AddProperty("responseLength", (response.Response?.Length ?? 0).ToString())
+                        .AddProperty("batchSize", batchSize.ToString());
+                }
 
                 if (!string.IsNullOrEmpty(response.Response) && response.Response != "[]")
                 {
                     return await BuildQueueItems(response.Response);
                 }
-
-                return null;
-
             }
             catch (Exception ex)
             {
@@ -127,135 +145,92 @@ namespace DurableTask.CosmosDB
         }
 
 
-        internal async Task<IQueueMessage> GetMessageAsync(TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
+        /// <inheritdoc />
+        public async Task<IEnumerable<IQueueMessage>> GetMessagesAsync(int controlQueueBatchSize, TimeSpan controlQueueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            StoredProcedureResponse<string> response = null;
-            try
-            {
-                var storedProcedureName = this.queueIsPartitioned ? DequeueItemsByPartitionStoredProcedureName : DequeueItemsStoredProcedureName;
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, storedProcedureName);
-                var queueVisibilityParameterValue = (int)Utils.ToUnixTime(DateTime.UtcNow.Add(queueVisibilityTimeout));
-
-
-                RequestOptions cosmosDbRequestOptions = null;
-                if (queueIsPartitioned)
-                {
-                    cosmosDbRequestOptions = new RequestOptions
-                    {
-                        PartitionKey = new PartitionKey(this.queueName)
-                    };
-                }
-
-                response = await this.documentClientWithoutSerializationSettings.ExecuteStoredProcedureAsync<string>(
-                    storedProcedureUri,
-                    cosmosDbRequestOptions,
-                    1, 
-                    queueVisibilityParameterValue,
-                    this.QueueItemLockInSeconds,
-                    this.queueName);
-
-                if (!string.IsNullOrEmpty(response.Response) && response.Response != "[]")
-                {
-                    return (await BuildQueueItems(response.Response))?.FirstOrDefault();
-                    
-                }
-
-                return null;
-
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.ToString());
-                //throw;
-            }
-
-            return null;
+            controlQueueBatchSize = Math.Max(controlQueueBatchSize, 20);
+            return await DequeueAsync(controlQueueBatchSize, controlQueueVisibilityTimeout, this.queueName, cancellationToken);
         }
 
-        private async Task<IEnumerable<IQueueMessage>> BuildQueueItems(string json)
+
+        internal async Task<IQueueMessage> GetMessageAsync(TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
-            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDBQueueMessage>>(json,
-                        new JsonSerializerSettings
-                        {
-                            TypeNameHandling = TypeNameHandling.Objects
-                        });
+            return (await DequeueAsync(1, queueVisibilityTimeout, this.queueName, cancellationToken)).FirstOrDefault();
+        }
+
+        internal async Task<IQueueMessage> GetMessageInPartitionAsync(string partitionKey, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
+        {
+            return (await DequeueAsync(1, queueVisibilityTimeout, partitionKey, cancellationToken)).FirstOrDefault();
+        }
 
 
-            if (result.Any())
+        private Task<IEnumerable<IQueueMessage>> BuildQueueItems(string json)
+        {
+            var result = JsonConvert.DeserializeObject<IEnumerable<CosmosDBQueueMessage>>(json, jsonSerializerSettings);
+
+            foreach (var q in result)
             {
-                var docs = (JArray)JsonConvert.DeserializeObject(json);
-                for (var i = docs.Count - 1; i >= 0; --i)
-                {
-                    var queueItem = result.ElementAt(i);
-                    queueItem.ETag = docs[i]["_etag"].ToString();
-                    
-                    if (queueItem.Data is MessageData messageData)
-                    {
-                        messageData.OriginalQueueMessage = queueItem;
-                        messageData.QueueName = queueItem.QueueName;
-                        messageData.TotalMessageSizeBytes = 0;                                        
-
-                        if (!string.IsNullOrEmpty(messageData.CompressedBlobName))
-                        {
-                            messageData.TaskMessage = await Utils.LoadAttachment<TaskMessage>(this.documentClientWithSerializationSettings, new Uri(messageData.CompressedBlobName, UriKind.Relative));                            
-                        }
-                    }
-                }
+                var messageData = (MessageData)q.Data;
+                messageData.OriginalQueueMessage = q;
+                messageData.QueueName = q.QueueName;
+                messageData.TotalMessageSizeBytes = 0;
             }
 
-            return result;
+            //if (result.Any())
+            //{
+            //    //var docs = (JArray)JsonConvert.DeserializeObject(json);
+            //    for (var i = docs.Count - 1; i >= 0; --i)
+            //    {
+            //        var queueItem = result.ElementAt(i);
+            //        queueItem.ETag = docs[i]["_etag"].ToString();
+
+            //        if (queueItem.Data is MessageData messageData)
+            //        {
+            //            messageData.OriginalQueueMessage = queueItem;
+            //            messageData.QueueName = queueItem.QueueName;
+            //            messageData.TotalMessageSizeBytes = 0;                                        
+
+            //            if (!string.IsNullOrEmpty(messageData.CompressedBlobName))
+            //            {
+            //                messageData.TaskMessage = await Utils.LoadAttachment<TaskMessage>(this.documentClientWithSerializationSettings, new Uri(messageData.CompressedBlobName, UriKind.Relative));                            
+            //            }
+            //        }
+            //    }
+            //}
+
+            return Task.FromResult<IEnumerable<IQueueMessage>>(result);
         }
 
         internal async Task CompleteAsync(string id)
         {
             var documentUri = UriFactory.CreateDocumentUri(
                 settings.QueueCollectionDefinition.DbName,
-                settings.QueueCollectionDefinition.CollectionName,
+                this.collectionName,
                 id);
 
-            await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.DeleteDocumentAsync(documentUri));
+            try
+            {
+                using (var recorded = new TelemetryRecorder(nameof(documentClient.DeleteDocumentAsync), "CosmosDB.Queue"))
+                {
+
+                    var response = await Utils.ExecuteWithRetries(() => this.documentClient.DeleteDocumentAsync(documentUri));
+                    recorded.AsSucceeded()
+                        .AddProperty(nameof(response.RequestCharge), response.RequestCharge.ToString())
+                        .AddProperty(nameof(this.queueName), this.queueName);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                throw;
+            }
         }
 
-        #region IDisposable Support
-        private bool disposedValue = false; // To detect redundant calls
-        
+
+
 
         /// <inheritdoc />
         public string Name => this.queueName;
-
-        /// <summary>
-        /// Queue item lock in seconds. Default is 60 seconds
-        /// </summary>
-        public int QueueItemLockInSeconds { get; set; } = 60;
-
-        /// <summary>
-        /// Dispose
-        /// </summary>
-        /// <param name="disposing"></param>
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!disposedValue)
-            {
-                if (disposing)
-                {
-                    this.documentClientWithSerializationSettings?.Dispose();
-                    this.documentClientWithSerializationSettings = null;
-                }
-
-                disposedValue = true;
-            }
-        }
-        
-
-        /// <summary>
-        /// Dispose
-        /// </summary>
-        public void Dispose()
-        {           
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-        
 
         /// <inheritdoc />
         public async Task CreateIfNotExistsAsync()
@@ -263,26 +238,39 @@ namespace DurableTask.CosmosDB
             if (this.initialized)
                 return;
 
-            await Utils.CreateCollectionIfNotExists(this.settings.QueueCollectionDefinition);                       
-            
-            this.documentClientWithSerializationSettings = new DocumentClient(
-                new Uri(this.settings.QueueCollectionDefinition.Endpoint),
-                this.settings.QueueCollectionDefinition.SecretKey,
-                new JsonSerializerSettings()
-                {
-                    TypeNameHandling = TypeNameHandling.All
-                });
+            await Utils.CreateCollectionIfNotExists(this.settings.QueueCollectionDefinition, this.collectionName);
 
-            this.documentClientWithoutSerializationSettings = new DocumentClient(
+            //this.documentClientWithSerializationSettings = new DocumentClient(
+            //    new Uri(this.settings.QueueCollectionDefinition.Endpoint),
+            //    this.settings.QueueCollectionDefinition.SecretKey,
+            //    new JsonSerializerSettings()
+            //    {
+            //        TypeNameHandling = TypeNameHandling.All
+            //    });
+
+            //this.documentClientWithoutSerializationSettings = new DocumentClient(
+            //   new Uri(this.settings.QueueCollectionDefinition.Endpoint),
+            //   this.settings.QueueCollectionDefinition.SecretKey);
+
+
+            jsonSerializerSettings = new JsonSerializerSettings()
+            {
+                TypeNameHandling = TypeNameHandling.Objects
+            };
+
+            this.documentClient = new DocumentClient(
                new Uri(this.settings.QueueCollectionDefinition.Endpoint),
-               this.settings.QueueCollectionDefinition.SecretKey);
+               this.settings.QueueCollectionDefinition.SecretKey,
+               jsonSerializerSettings
+               );
+
 
             var createStoredProcedure = false;
             try
             {
-                var storedProceduredName = this.queueIsPartitioned ? DequeueItemsByPartitionStoredProcedureName : DequeueItemsStoredProcedureName;
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, storedProceduredName);
-                await this.documentClientWithSerializationSettings.ReadStoredProcedureAsync(storedProcedureUri);
+                var storedProceduredName = queueIsPartitioned ? DequeueItemsByPartitionStoredProcedureName : DequeueItemsStoredProcedureName;
+                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.collectionName, storedProceduredName);
+                await this.documentClient.ReadStoredProcedureAsync(storedProcedureUri);
             }
             catch (DocumentClientException ex)
             {
@@ -292,15 +280,19 @@ namespace DurableTask.CosmosDB
 
             if (createStoredProcedure)
             {
-                if (queueIsPartitioned)
+                try
                 {
-                    await CreateDequeueItemsByPartitionStoredProcedure();
+                    if (this.queueIsPartitioned)
+                        await CreateDequeueItemsByPartitionStoredProcedure();
+                    else
+                        await CreateDequeueItemsStoredProcedure();
                 }
-                else
+                catch (DocumentClientException ex)
                 {
-                    await CreateDequeueItemsStoredProcedure();
+                    // already exists!
+                    if (ex.StatusCode != System.Net.HttpStatusCode.Conflict)
+                        throw;
                 }
-                
             }
 
             this.initialized = true;
@@ -308,7 +300,7 @@ namespace DurableTask.CosmosDB
 
         async Task CreateDequeueItemsByPartitionStoredProcedure()
         {
-            var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName);
+            var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName);
             var storedProcedure = new StoredProcedure()
             {
                 Id = DequeueItemsByPartitionStoredProcedureName,
@@ -324,17 +316,16 @@ function dequeueItemsByPartition(batchSize, visibilityStarts, lockDurationInSeco
     var collection = getContext().getCollection();
 
     var currentDate = Math.floor(new Date() / 1000);
-    var dequeuedItemLockUntil = currentDate + lockDurationInSeconds;
-    var searchItemsLockUntil = Math.floor(currentDate + (lockDurationInSeconds / 2));
+    var dequeuedItemLockUntil = currentDate + parseInt(lockDurationInSeconds);
     var itemsToReturn = [];
     var foundItemsCount = 0;
     var processedItemsCount = 0;
     
     var query = {
-        query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextVisibleTime <= @visibilityStarts AND ((c.Status = ""InProgress"" AND @lockedLimit > c.LockedUntil) OR c.Status = ""Pending"") ORDER by c.NextVisibleTime',
+        query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextAvailableTime <= @visibilityStarts ORDER by c.NextAvailableTime',
         parameters: [
-            { name: ""@visibilityStarts"", value: visibilityStarts }, 
-            { name: ""@lockedLimit"", value: searchItemsLockUntil }]
+            { name: '@visibilityStarts', value: parseInt(visibilityStarts) }
+        ]
     };
 
     collection.queryDocuments(
@@ -360,7 +351,7 @@ function dequeueItemsByPartition(batchSize, visibilityStarts, lockDurationInSeco
         var doc = docs[index];
         doc.Status = 'InProgress';
         doc.DequeueCount = doc.DequeueCount + 1;
-        doc.LockedUntil = dequeuedItemLockUntil;
+        doc.NextAvailableTime = dequeuedItemLockUntil;
 
         collection.replaceDocument(
             doc._self,
@@ -385,13 +376,13 @@ function dequeueItemsByPartition(batchSize, visibilityStarts, lockDurationInSeco
 ",
             };
 
-            var createStoredProcedureResponse = await this.documentClientWithSerializationSettings.CreateStoredProcedureAsync(collectionUri, storedProcedure);
+            var createStoredProcedureResponse = await this.documentClient.CreateStoredProcedureAsync(collectionUri, storedProcedure);
         }
 
 
         async Task CreateDequeueItemsStoredProcedure()
         {
-            var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName);
+            var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName);
             var storedProcedure = new StoredProcedure()
             {
                 Id = DequeueItemsStoredProcedureName,
@@ -407,18 +398,17 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
     var collection = getContext().getCollection();
 
     var currentDate = Math.floor(new Date() / 1000);
-    var dequeuedItemLockUntil = currentDate + lockDurationInSeconds;
-    var searchItemsLockUntil = Math.floor(currentDate + (lockDurationInSeconds / 2));
+    var dequeuedItemLockUntil = currentDate + parseInt(lockDurationInSeconds);
     var itemsToReturn = [];
     var foundItemsCount = 0;
     var processedItemsCount = 0;
     
     var query = {
-        query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextVisibleTime <= @visibilityStarts AND c.QueueName = @queueName AND ((c.Status = ""Pending"")) ORDER by c.NextVisibleTime',
+        query: 'SELECT TOP ' + batchSize + ' * FROM c WHERE c.NextAvailableTime <= @visibilityStarts AND c.QueueName = @queueName ORDER by c.NextAvailableTime',
         parameters: [
-            { name: ""@queueName"", value: queueName }, 
-            { name: ""@visibilityStarts"", value: visibilityStarts }, 
-            { name: '@searchItemsLockUntil', value: searchItemsLockUntil }]
+            { name: '@queueName', value: queueName }, 
+            { name: '@visibilityStarts', value: parseInt(visibilityStarts) } 
+        ]
     };
 
     collection.queryDocuments(
@@ -444,7 +434,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         var doc = docs[index];
         doc.Status = 'InProgress';
         doc.DequeueCount = doc.DequeueCount + 1;
-        doc.LockedUntil = dequeuedItemLockUntil;
+        doc.NextAvailableTime = dequeuedItemLockUntil;
 
         collection.replaceDocument(
             doc._self,
@@ -469,7 +459,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
 ",
             };
 
-            var createStoredProcedureResponse = await this.documentClientWithSerializationSettings.CreateStoredProcedureAsync(collectionUri, storedProcedure);
+            var createStoredProcedureResponse = await this.documentClient.CreateStoredProcedureAsync(collectionUri, storedProcedure);
         }
 
         /// <inheritdoc />
@@ -479,7 +469,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
             return Task.FromResult<bool>(true);
         }
 
-       
+
         /// <inheritdoc />
         public async Task DeleteMessageAsync(IQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
@@ -492,19 +482,34 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
                     {
                         Condition = cosmosQueueMessage.ETag,
                         Type = AccessConditionType.IfMatch
-                    },
+                    }
                 };
 
                 if (queueIsPartitioned)
-                    cosmosDBRequestOptions.PartitionKey = new PartitionKey(this.queueName);
+                    cosmosDBRequestOptions.PartitionKey = new PartitionKey(cosmosQueueMessage.PartitionKey);
 
-                await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.DeleteDocumentAsync(
-                    UriFactory.CreateDocumentUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName, cosmosQueueMessage.Id),
-                    cosmosDBRequestOptions));
+                try
+                {
+                    using (var recorded = new TelemetryRecorder(nameof(documentClient.DeleteDocumentAsync), "CosmosDB.Queue"))
+                    {
+                        var response = await Utils.ExecuteWithRetries(() => this.documentClient.DeleteDocumentAsync(
+                            UriFactory.CreateDocumentUri(settings.QueueCollectionDefinition.DbName, this.collectionName, cosmosQueueMessage.Id),
+                            cosmosDBRequestOptions));
+
+                        recorded.AsSucceeded()
+                            .AddProperty(nameof(response.RequestCharge), response.RequestCharge.ToString())
+                            .AddProperty(nameof(queueName), this.queueName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.ToString());
+                    throw;
+                }
             }
             else
-            { 
-                cosmosQueueMessage.Status = QueueItemStatus.Completed;
+            {
+                cosmosQueueMessage.NextAvailableTime = long.MaxValue;
                 cosmosQueueMessage.TimeToLive = (int)Utils.ToUnixTime(DateTime.UtcNow.AddHours(1));
                 await SaveQueueItem(cosmosQueueMessage);
             }
@@ -517,17 +522,21 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         /// <returns></returns>
         async Task<ResourceResponse<Document>> SaveQueueItem(CosmosDBQueueMessage message)
         {
-            var reqOptions = new RequestOptions()
+            var reqOptions = new RequestOptions();
+
+            // updating an existing item, use optimistic locking by _etag
+            if (!string.IsNullOrEmpty(message.Id))
             {
-                AccessCondition = new Microsoft.Azure.Documents.Client.AccessCondition()
+                reqOptions.AccessCondition = new Microsoft.Azure.Documents.Client.AccessCondition()
                 {
                     Condition = message.ETag,
-                    Type = AccessConditionType.IfMatch,                    
-                },                
-            };
+                    Type = AccessConditionType.IfMatch,
+                };
+
+            }
 
             if (this.queueIsPartitioned)
-                reqOptions.PartitionKey = new PartitionKey(message.QueueName);
+                reqOptions.PartitionKey = new PartitionKey(message.PartitionKey);
 
 #if INCLUDED_EXPERIMENTAL_ATTACHMENTS
             TaskMessage attachmentTaskMessage = null;
@@ -550,7 +559,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
                                 message.Id = Guid.NewGuid().ToString();
                             }
 
-                            messageData.CompressedBlobName = UriFactory.CreateAttachmentUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName, message.Id, TaskMessageAttachmentId).ToString();
+                            messageData.CompressedBlobName = UriFactory.CreateAttachmentUri(settings.QueueCollectionDefinition.DbName, this.collectionName, message.Id, TaskMessageAttachmentId).ToString();
                             if (message.NextVisibleTime == 0)
                                 message.NextVisibleTime = Utils.ToUnixTime(DateTime.UtcNow.AddSeconds(5));
                             else
@@ -560,13 +569,19 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
                 }
             }
 #endif
+            ResourceResponse<Document> createDocumentResponse = null;
+            using (var recorded = new TelemetryRecorder(nameof(documentClient.UpsertDocumentAsync), "CosmosDB.Queue"))
+            {
+                createDocumentResponse = await Utils.ExecuteWithRetries(() => this.documentClient.UpsertDocumentAsync(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName), message, reqOptions));
+                recorded.AsSucceeded()
+                    .AddProperty(nameof(createDocumentResponse.RequestCharge), createDocumentResponse.RequestCharge.ToString())
+                    .AddProperty(nameof(queueName), this.queueName);
 
-            var createDocumentResponse = await Utils.ExecuteWithRetries(() => this.documentClientWithSerializationSettings.UpsertDocumentAsync(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName), message, reqOptions));
-
+            }
 #if INCLUDED_EXPERIMENTAL_ATTACHMENTS
             if (attachmentTaskMessage != null)
             {
-                var createdDocumentUri = UriFactory.CreateDocumentUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName, createDocumentResponse.Resource.Id);
+                var createdDocumentUri = UriFactory.CreateDocumentUri(settings.QueueCollectionDefinition.DbName, this.collectionName, createDocumentResponse.Resource.Id);
                 var attachmentResponse = await Utils.SaveAttachment(this.documentClientWithSerializationSettings, createdDocumentUri, attachmentTaskMessage, TaskMessageAttachmentId);
 
                 // set the task message back in the instance
@@ -586,8 +601,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
             {
                 // We "abandon" the message by settings its visibility timeout to zero.
                 // This allows it to be reprocessed on this node or another node.
-                cosmosDBQueueMessage.Status = QueueItemStatus.Pending;
-                cosmosDBQueueMessage.LockedUntil = 0;
+                cosmosDBQueueMessage.NextAvailableTime = cosmosDBQueueMessage.NextVisibleTime;
 
                 await SaveQueueItem(cosmosDBQueueMessage);
             }
@@ -605,25 +619,25 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
         /// <inheritdoc />
         public Task<int> GetQueueLenghtAsync()
         {
-            FeedOptions feedOptions = null;
-            if (this.queueIsPartitioned)
-                feedOptions.EnableCrossPartitionQuery = true;
-
-            var count = this.documentClientWithSerializationSettings.CreateDocumentQuery<CosmosDBQueueMessage>(
-                UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, settings.QueueCollectionDefinition.CollectionName))
-                .Where(x => x.Status == QueueItemStatus.Pending && x.NextVisibleTime <= Utils.ToUnixTime(DateTime.UtcNow))
+            using (var recorded = new TelemetryRecorder(nameof(documentClient.CreateDocumentQuery), "CosmosDB.Queue"))
+            {
+                var count = this.documentClient.CreateDocumentQuery<CosmosDBQueueMessage>(
+                UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName))
+                .Where(x => x.NextAvailableTime <= Utils.ToUnixTime(DateTime.UtcNow))
                 .Count();
 
-            return Task.FromResult<int>(count);
+                return Task.FromResult<int>(count);
+            }
         }
 
         /// <inheritdoc />
         public async Task<bool> ExistsAsync()
-        {            
+        {
             try
             {
-                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.settings.QueueCollectionDefinition.CollectionName, DequeueItemsStoredProcedureName);
-                await this.documentClientWithSerializationSettings.ReadStoredProcedureAsync(storedProcedureUri);
+                var storedProceduredName = queueIsPartitioned ? DequeueItemsByPartitionStoredProcedureName : DequeueItemsStoredProcedureName;
+                var storedProcedureUri = UriFactory.CreateStoredProcedureUri(this.settings.QueueCollectionDefinition.DbName, this.collectionName, storedProceduredName);
+                await this.documentClient.ReadStoredProcedureAsync(storedProcedureUri);
 
             }
             catch (DocumentClientException ex)
@@ -633,9 +647,41 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
 
                 throw;
             }
-            
+
             return true;
         }
-#endregion
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        /// <param name="disposing"></param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    this.documentClient?.Dispose();
+                    this.documentClient = null;
+                }
+
+                disposedValue = true;
+            }
+        }
+
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        #endregion
     }
 }

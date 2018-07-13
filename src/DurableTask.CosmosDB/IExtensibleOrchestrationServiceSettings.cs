@@ -118,5 +118,14 @@ namespace DurableTask.CosmosDB
         /// </summary>
         bool CosmosDBLeaseManagementUsePartition { get; }
 
+        /// <summary>
+        /// Connection String to SQL database
+        /// </summary>
+        string SqlConnectionString { get; set; }
+
+        /// <summary>
+        /// Gets/sets if memory optimized table should be used for queues
+        /// </summary>
+        bool SqlQueueUseMemoryOptimizedTable { get; }
     }
 }

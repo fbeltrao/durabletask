@@ -2,7 +2,7 @@
   "profiles": {
     "ConsoleTester": {
       "commandName": "Project",
-      "commandLineArgs": "cosmosdb 1"
+      "commandLineArgs": "sql 5"
     }
   }
 }

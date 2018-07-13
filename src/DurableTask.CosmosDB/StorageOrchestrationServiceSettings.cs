@@ -102,6 +102,15 @@ namespace DurableTask.CosmosDB
         /// <inheritdoc />
         public bool CosmosDBLeaseManagementUsePartition { get; set; } = false;
 
+        /// <inheritdoc />
+        public string SqlConnectionString { get; set; }
+
+        /// <inheritdoc />
+        public bool SqlQueueUseMemoryOptimizedTable { get; set; }
+
+        /// <inheritdoc />
+        public bool CosmosDBQueueUseOneCollectionPerQueueType { get; set; }
+
         /// <summary>
         /// Constructor
         /// </summary>

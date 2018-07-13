@@ -27,6 +27,7 @@ namespace DurableTask.AzureStorage
     using DurableTask.Core;
     using DurableTask.Core.History;
     using DurableTask.CosmosDB;
+    using DurableTask.CosmosDB.Monitoring;
     using DurableTask.CosmosDB.Queue;
     using DurableTask.CosmosDB.Tracking;
     using Microsoft.ApplicationInsights;
@@ -69,7 +70,6 @@ namespace DurableTask.AzureStorage
         readonly IPartitionManager partitionManager;
 
         readonly object hubCreationLock;
-        private readonly TelemetryClient telemetryClient;
         bool isStarted;
         Task statsLoop;
         CancellationTokenSource shutdownSource;
@@ -103,9 +103,13 @@ namespace DurableTask.AzureStorage
                 };
 
                 var backendType = (!string.IsNullOrEmpty(settings.StorageConnectionString)) ? "storage" : "cosmosdb";
+
+                if (!string.IsNullOrEmpty(settings.SqlConnectionString))
+                    backendType = settings.SqlQueueUseMemoryOptimizedTable ? "sql/mem" : "sql/disk";
+
                 config.TelemetryInitializers.Add(new CosmosDB.Monitoring.DurableTaskTelemetryInitializer(backendType));
 
-                this.telemetryClient = new TelemetryClient(config);
+                TelemetryClientProvider.Set(new TelemetryClient(config));
                 
             }
 
@@ -115,9 +119,11 @@ namespace DurableTask.AzureStorage
             this.stats = new AzureStorageOrchestrationServiceStats();            
 
             if (!string.IsNullOrEmpty(settings.StorageConnectionString))
-                this.queueManager = new StorageQueueManager(settings, stats, this.telemetryClient);
+                this.queueManager = new StorageQueueManager(settings, stats);
+            else if (!string.IsNullOrEmpty(settings.SqlConnectionString))
+                this.queueManager = new SqlServerQueueManager(settings, stats);
             else
-                this.queueManager = new CosmosDBQueueManager(settings, stats, this.telemetryClient);
+                this.queueManager = new CosmosDBQueueManager(settings, stats);
 
             if (customInstanceStore == null)
             {
@@ -125,6 +131,10 @@ namespace DurableTask.AzureStorage
                 {
                     var storageQueueManager = (StorageQueueManager)this.queueManager;
                     this.trackingStore = new AzureTableTrackingStore(settings.TaskHubName, settings.StorageConnectionString, storageQueueManager.messageManager, ((StorageOrchestrationServiceSettings)this.settings).HistoryTableRequestOptions, this.stats);
+                }
+                else if (!string.IsNullOrEmpty(settings.SqlConnectionString))
+                {
+                    this.trackingStore = new SqlTrackingStore(settings.SqlConnectionString);
                 }
                 else
                 {
@@ -149,7 +159,29 @@ namespace DurableTask.AzureStorage
                 this.GetTaskHubCreatorTask,
                 LazyThreadSafetyMode.ExecutionAndPublication);
 
-            if (string.IsNullOrEmpty(settings.CosmosDBLeaseManagementCollection))
+            if (!string.IsNullOrEmpty(settings.SqlConnectionString))
+            {
+                this.leaseManager = new SqlLeaseManager(
+                                   settings.TaskHubName,
+                                   settings.WorkerId,
+                                   settings.SqlConnectionString,
+                                   settings.LeaseInterval,
+                                   settings.LeaseRenewInterval,
+                                   this.stats);
+
+                this.partitionManager = new PartitionManager<SqlLease>(
+                    settings.CosmosDBLeaseManagementCollection,
+                    this.settings.TaskHubName,
+                    settings.WorkerId,
+                    this.leaseManager,
+                    new PartitionManagerOptions
+                    {
+                        AcquireInterval = settings.LeaseAcquireInterval,
+                        RenewInterval = settings.LeaseRenewInterval,
+                        LeaseInterval = settings.LeaseInterval,
+                    });
+            }
+            else if (string.IsNullOrEmpty(settings.CosmosDBLeaseManagementCollection))
             {
                 this.leaseManager = BlobLeaseManager.GetBlobLeaseManager(
                     settings.TaskHubName,
@@ -271,7 +303,7 @@ namespace DurableTask.AzureStorage
             return this.taskHubCreator.Value;
         }
 
-        IDisposable MonitorDependency(string dependencyType) => new CosmosDB.Monitoring.TelemetryRecorder(this.telemetryClient, dependencyType);
+        IDisposable MonitorDependency(string dependencyType) => new CosmosDB.Monitoring.TelemetryRecorder(TelemetryClientProvider.TelemetryClient, dependencyType);
 
         // Internal logic used by the lazy taskHubCreator
         async Task GetTaskHubCreatorTask()
@@ -464,13 +496,12 @@ namespace DurableTask.AzureStorage
         }
 
         async Task IPartitionObserver.OnPartitionAcquiredAsync(Lease lease)
-        {
-            // TODO: remove refactored implementation
-            //CloudQueue controlQueue = this.queueClient.GetQueueReference(lease.PartitionId);
-            //await controlQueue.CreateIfNotExistsAsync();
-            //this.stats.StorageRequests.Increment();
-            //this.ownedControlQueues[lease.PartitionId] = controlQueue;
-            //this.allControlQueues[lease.PartitionId] = controlQueue;
+        {          
+            if (this.queueManager is IPartitionObserver qmgrPartitionObserver)
+            {
+                await qmgrPartitionObserver.OnPartitionAcquiredAsync(lease);
+            }
+
 
             var controlQueue = this.queueManager.GetControlQueue(lease.PartitionId);
             await controlQueue.CreateIfNotExistsAsync();
@@ -479,8 +510,14 @@ namespace DurableTask.AzureStorage
 
         }
 
-        Task IPartitionObserver.OnPartitionReleasedAsync(Lease lease, CloseReason reason)
+        async Task IPartitionObserver.OnPartitionReleasedAsync(Lease lease, CloseReason reason)
         {
+
+            if (this.queueManager is IPartitionObserver qmgrPartitionObserver)
+            {
+                await qmgrPartitionObserver.OnPartitionReleasedAsync(lease, reason);
+            }
+
             if (!this.queueManager.OwnedControlQueues.TryRemove(lease.PartitionId, out var controlQueue))
             {
                 AnalyticsEventSource.Log.PartitionManagerWarning(
@@ -490,7 +527,7 @@ namespace DurableTask.AzureStorage
                     $"Worker ${this.settings.WorkerId} lost a lease '{lease.PartitionId}' but didn't own the queue.");
             }
 
-            return Utils.CompletedTask;
+            //return Utils.CompletedTask;
         }
 
         // Used for testing
@@ -499,13 +536,7 @@ namespace DurableTask.AzureStorage
             return this.leaseManager.ListLeasesAsync();
         }
 
-        
-
-        static TaskHubInfo GetTaskHubInfo(string taskHub, int partitionCount)
-        {
-            return new TaskHubInfo(taskHub, DateTime.UtcNow, partitionCount);
-        }
-
+       
         #endregion
 
         #region Orchestration Work Item Methods
