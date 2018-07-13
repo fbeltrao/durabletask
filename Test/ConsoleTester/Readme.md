@@ -77,6 +77,7 @@ Set the following App.Config settings:
 
 To run a load test with 16 workers using CosmosDB as backend:
 
+1. Use a VM in same region where CosmosDB resides to run the hosts
 1. Set the App.Config CosmosDB properties
 1. Set the partition count to 16
 1. Build the ConsoleTester application in release
