@@ -338,6 +338,7 @@ namespace DurableTask.CosmosDB
                     }
 
                     recorded
+                        .AddProperty(nameof(sproc), sproc)
                         .AddProperty(nameof(this.queueName), this.queueName)
                         .AsSucceeded();
                 }
@@ -371,6 +372,7 @@ namespace DurableTask.CosmosDB
 
 
                     recorded
+                        .AddProperty(nameof(sproc), sproc)
                         .AddProperty(nameof(this.queueName), this.queueName)
                         .AsSucceeded();
                 }

@@ -47,6 +47,12 @@ namespace DurableTask.CosmosDB.Tracking
             this.documentClient = new DocumentClient(new Uri(endpoint), key, new JsonSerializerSettings()
             {
                 TypeNameHandling = TypeNameHandling.All,
+
+            },
+            new ConnectionPolicy()
+            {
+                ConnectionMode = ConnectionMode.Direct,
+                ConnectionProtocol = Protocol.Tcp
             });
 
 

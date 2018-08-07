@@ -30,7 +30,12 @@ namespace DurableTask.CosmosDB
         private readonly string queueName;
         private readonly bool isControlQueue;
         private readonly string collectionName;
-        JsonSerializerSettings jsonSerializerSettings;
+        private readonly Uri queueCollectionUri;
+        private static JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings()
+        {
+            TypeNameHandling = TypeNameHandling.Objects
+        };
+
         //const int MaxTaskMessageLength = 200000;
 
         /// <summary>
@@ -52,15 +57,18 @@ namespace DurableTask.CosmosDB
         /// </summary>
         public CosmosDBQueue(CosmosDBQueueSettings settings, string name, bool isControlQueue)
         {
-            this.queueIsPartitioned = !isControlQueue && settings.QueueCollectionDefinition.PartitionKeyPaths?.Count > 0;
+            //this.queueIsPartitioned = !isControlQueue && settings.QueueCollectionDefinition.PartitionKeyPaths?.Count > 0;
+            this.queueIsPartitioned = settings.QueueCollectionDefinition.PartitionKeyPaths?.Count > 0;
             this.settings = settings;
             this.queueName = name;
             this.isControlQueue = isControlQueue;
-            this.collectionName = this.settings.QueueCollectionDefinition.CollectionName;
+            this.collectionName = this.settings.QueueCollectionDefinition.CollectionName;            
             if (settings.UseOneCollectionPerQueueType)
             {
                 this.collectionName = $"{this.settings.QueueCollectionDefinition.CollectionName}-{(isControlQueue ? "control" : "workitem")}";
             }
+
+            this.queueCollectionUri = UriFactory.CreateDocumentCollectionUri(this.settings.QueueCollectionDefinition.DbName, this.collectionName);
         }
 
 
@@ -82,8 +90,7 @@ namespace DurableTask.CosmosDB
                 message.NextVisibleTime = Utils.ToUnixTime(DateTime.UtcNow);
             message.NextAvailableTime = message.NextVisibleTime;
 
-            var uri = UriFactory.CreateDocumentCollectionUri(this.settings.QueueCollectionDefinition.DbName, this.collectionName);
-
+            
             var res = await SaveQueueItem(message);
 
             message.ETag = res.Resource.ETag;
@@ -252,12 +259,7 @@ namespace DurableTask.CosmosDB
             //   new Uri(this.settings.QueueCollectionDefinition.Endpoint),
             //   this.settings.QueueCollectionDefinition.SecretKey);
 
-
-            jsonSerializerSettings = new JsonSerializerSettings()
-            {
-                TypeNameHandling = TypeNameHandling.Objects
-            };
-
+           
             this.documentClient = new DocumentClient(
                new Uri(this.settings.QueueCollectionDefinition.Endpoint),
                this.settings.QueueCollectionDefinition.SecretKey,
@@ -299,8 +301,7 @@ namespace DurableTask.CosmosDB
         }
 
         async Task CreateDequeueItemsByPartitionStoredProcedure()
-        {
-            var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName);
+        {            
             var storedProcedure = new StoredProcedure()
             {
                 Id = DequeueItemsByPartitionStoredProcedureName,
@@ -349,7 +350,6 @@ function dequeueItemsByPartition(batchSize, visibilityStarts, lockDurationInSeco
 
     function updateDocument(docs, index) {
         var doc = docs[index];
-        doc.Status = 'InProgress';
         doc.DequeueCount = doc.DequeueCount + 1;
         doc.NextAvailableTime = dequeuedItemLockUntil;
 
@@ -376,13 +376,12 @@ function dequeueItemsByPartition(batchSize, visibilityStarts, lockDurationInSeco
 ",
             };
 
-            var createStoredProcedureResponse = await this.documentClient.CreateStoredProcedureAsync(collectionUri, storedProcedure);
+            var createStoredProcedureResponse = await this.documentClient.CreateStoredProcedureAsync(this.queueCollectionUri, storedProcedure);
         }
 
 
         async Task CreateDequeueItemsStoredProcedure()
-        {
-            var collectionUri = UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName);
+        {            
             var storedProcedure = new StoredProcedure()
             {
                 Id = DequeueItemsStoredProcedureName,
@@ -432,7 +431,6 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
 
     function updateDocument(docs, index) {
         var doc = docs[index];
-        doc.Status = 'InProgress';
         doc.DequeueCount = doc.DequeueCount + 1;
         doc.NextAvailableTime = dequeuedItemLockUntil;
 
@@ -459,7 +457,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
 ",
             };
 
-            var createStoredProcedureResponse = await this.documentClient.CreateStoredProcedureAsync(collectionUri, storedProcedure);
+            var createStoredProcedureResponse = await this.documentClient.CreateStoredProcedureAsync(this.queueCollectionUri, storedProcedure);
         }
 
         /// <inheritdoc />
@@ -572,7 +570,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
             ResourceResponse<Document> createDocumentResponse = null;
             using (var recorded = new TelemetryRecorder(nameof(documentClient.UpsertDocumentAsync), "CosmosDB.Queue"))
             {
-                createDocumentResponse = await Utils.ExecuteWithRetries(() => this.documentClient.UpsertDocumentAsync(UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName), message, reqOptions));
+                createDocumentResponse = await Utils.ExecuteWithRetries(() => this.documentClient.UpsertDocumentAsync(this.queueCollectionUri, message, reqOptions));
                 recorded.AsSucceeded()
                     .AddProperty(nameof(createDocumentResponse.RequestCharge), createDocumentResponse.RequestCharge.ToString())
                     .AddProperty(nameof(queueName), this.queueName);
@@ -622,7 +620,7 @@ function dequeueItems(batchSize, visibilityStarts, lockDurationInSeconds, queueN
             using (var recorded = new TelemetryRecorder(nameof(documentClient.CreateDocumentQuery), "CosmosDB.Queue"))
             {
                 var count = this.documentClient.CreateDocumentQuery<CosmosDBQueueMessage>(
-                UriFactory.CreateDocumentCollectionUri(settings.QueueCollectionDefinition.DbName, this.collectionName))
+                this.queueCollectionUri)
                 .Where(x => x.NextAvailableTime <= Utils.ToUnixTime(DateTime.UtcNow))
                 .Count();
 

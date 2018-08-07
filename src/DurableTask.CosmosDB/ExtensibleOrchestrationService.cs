@@ -999,10 +999,12 @@ namespace DurableTask.AzureStorage
                     break;
                 }
 
-                if (receiveTimeoutStopwatch.Elapsed > receiveTimeout)
-                {
-                    return null;
-                }
+                // If the Queue is empty, wait a bit to avoid hitting the Stored Procedure and consuming RUs when there is no work to be done
+                // The previous If gets hit always as the queries always return before the receiveTimeout
+                //if (receiveTimeoutStopwatch.Elapsed > receiveTimeout)
+                //{
+                //    return null;
+                //}
 
                 await this.workItemQueueBackoff.WaitAsync(cancellationToken);
             }

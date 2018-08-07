@@ -39,6 +39,7 @@ namespace DurableTask.AzureStorage
         private TimeSpan leaseInterval;
         private TimeSpan leaseRenewInterval;
         private AzureStorageOrchestrationServiceStats stats;
+        private readonly Uri documentCollectionUri;
         private DocumentClient documentClient;
 
         public CosmosDBLeaseManager(
@@ -63,6 +64,7 @@ namespace DurableTask.AzureStorage
             this.leaseInterval = leaseInterval;
             this.leaseRenewInterval = leaseRenewInterval;
             this.stats = stats ?? new AzureStorageOrchestrationServiceStats();
+            this.documentCollectionUri = UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection);
 
             this.Initialize();
         }
@@ -71,12 +73,8 @@ namespace DurableTask.AzureStorage
         public async Task<bool> LeaseStoreExistsAsync()
         {
             try
-            {
-                var collectionUri = UriFactory.CreateDocumentCollectionUri(
-                    this.cosmosDBName,
-                    this.cosmosDBLeaseManagementCollection);
-
-                var getCollectionResponse = await this.documentClient.ReadDocumentCollectionAsync(collectionUri);
+            {                
+                var getCollectionResponse = await this.documentClient.ReadDocumentCollectionAsync(this.documentCollectionUri);
                 if (getCollectionResponse.StatusCode == System.Net.HttpStatusCode.OK)
                 {
                     return true;
@@ -151,7 +149,7 @@ namespace DurableTask.AzureStorage
                 }
 
                 await this.documentClient.CreateDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     lease,
                     requestOptions);
             }
@@ -177,7 +175,7 @@ namespace DurableTask.AzureStorage
                 if (cosmosDBLeaseManagementUsePartition)
                 {
                     feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
-                        UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection),
+                        this.documentCollectionUri,
                         new FeedOptions()
                         {
                             PartitionKey = new PartitionKey(taskHubName)
@@ -187,8 +185,7 @@ namespace DurableTask.AzureStorage
                 }
                 else
                 {
-                    feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(
-                        UriFactory.CreateDocumentCollectionUri(this.cosmosDBName, this.cosmosDBLeaseManagementCollection))
+                    feed = this.documentClient.CreateDocumentQuery<CosmosDBLease>(this.documentCollectionUri)
                         .Where(d => d.TaskHubName == taskHubName && d.DocumentType == "lease")
                         .AsDocumentQuery();
                 }
@@ -251,7 +248,7 @@ namespace DurableTask.AzureStorage
 
 
                 await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     lease,
                     requestOptions);
             }
@@ -337,7 +334,7 @@ namespace DurableTask.AzureStorage
 
 
                 var res = await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     desiredLeaseState,
                     requestOptions
                     );
@@ -384,7 +381,7 @@ namespace DurableTask.AzureStorage
                     requestOptions.PartitionKey = new PartitionKey(desiredLeaseState.TaskHubName);
 
                 var updateResponse = await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     desiredLeaseState,
                     requestOptions
                     );
@@ -438,7 +435,7 @@ namespace DurableTask.AzureStorage
 
 
                 var res = await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     desiredLeaseState,
                     requestOptions
                     );
@@ -530,7 +527,7 @@ namespace DurableTask.AzureStorage
                     requestOptions.PartitionKey = new PartitionKey(cosmosDBLease.TaskHubName);
 
                 await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     cosmosDBLease,
                     requestOptions);
 
@@ -606,7 +603,7 @@ namespace DurableTask.AzureStorage
                 }
 
                 await this.documentClient.UpsertDocumentAsync(
-                    UriFactory.CreateDocumentCollectionUri(cosmosDBName, cosmosDBLeaseManagementCollection),
+                    this.documentCollectionUri,
                     new CosmosDBTaskHubInfoWrapper(GetTaskHubInfoDocumentId(), taskHubInfo),
                     requestOptions);
             }

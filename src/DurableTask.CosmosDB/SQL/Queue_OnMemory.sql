@@ -70,7 +70,6 @@ AS
 
 		UPDATE TOP (@batchSize) dbo.ControlMemQueue
 		SET
-			inProgress = 1,
 			NextAvailableTime = @now + @lockDuration,
 			Version = Version+1,
 			DequeueCount = DequeueCount+1
@@ -103,7 +102,6 @@ AS
 
 		UPDATE TOP (@batchSize) dbo.WorkItemMemQueue
 		SET
-			inProgress = 1,
 			NextAvailableTime = @now + @lockDuration,
 			Version = Version+1,
 			DequeueCount = DequeueCount+1
