@@ -1,4 +1,5 @@
-﻿using Microsoft.WindowsAzure.Storage;
+﻿using DurableTask.CosmosDB.Monitoring;
+using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Queue;
 using System;
 using System.Collections.Generic;
@@ -36,8 +37,10 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public async Task DeleteMessageAsync(IQueueMessage queueMessage, QueueRequestOptions requestOptions, OperationContext operationContext)
         {
-            await this.cloudQueue.DeleteMessageAsync(((CloudQueueMessageWrapper)queueMessage).CloudQueueMessage, requestOptions, operationContext);
-            
+            using (var recorded = new TelemetryRecorder(nameof(DeleteMessageAsync), "Storage.Queue"))
+            {
+                await this.cloudQueue.DeleteMessageAsync(((CloudQueueMessageWrapper)queueMessage).CloudQueueMessage, requestOptions, operationContext);
+            }
         }
 
         /// <inheritdoc />
