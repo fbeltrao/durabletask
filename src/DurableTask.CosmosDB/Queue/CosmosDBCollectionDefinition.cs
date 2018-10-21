@@ -45,11 +45,11 @@ namespace DurableTask.CosmosDB
         /// <summary>
         /// Included index paths
         /// </summary>
-        public IEnumerable<IncludedPath> IndexIncludedPaths { get; set; }
+        public IList<IncludedPath> IndexIncludedPaths { get; set; }
 
         /// <summary>
         /// Excluded index paths
         /// </summary>
-        public IEnumerable<ExcludedPath> IndexExcludedPaths { get; set; }
+        public IList<ExcludedPath> IndexExcludedPaths { get; set; }
     }
 }

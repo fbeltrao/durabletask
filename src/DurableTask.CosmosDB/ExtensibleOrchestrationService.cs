@@ -205,6 +205,9 @@ namespace DurableTask.AzureStorage
             }
             else
             {
+                this.leaseManager = new FakeLeaseManager();
+                this.partitionManager = new FakePartitionManager();
+/*
                 this.leaseManager = new CosmosDBLeaseManager(
                     settings.TaskHubName,
                     settings.WorkerId,
@@ -228,6 +231,7 @@ namespace DurableTask.AzureStorage
                         RenewInterval = settings.LeaseRenewInterval,
                         LeaseInterval = settings.LeaseInterval,
                     });
+                    */
             }
         }
 

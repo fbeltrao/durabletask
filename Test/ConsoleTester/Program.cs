@@ -1,8 +1,8 @@
 ﻿using DurableTask.Core;
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Diagnostics;
+using Serilog;
 
 namespace DurableTask.ConsoleTester
 {
@@ -18,6 +18,16 @@ namespace DurableTask.ConsoleTester
 
         static async Task Main(string[] args)
         {
+            //var listener = new global::SerilogTraceListener.SerilogTraceListener();
+            //Trace.Listeners.Add(listener);
+
+            //Log.Logger = new LoggerConfiguration()
+            //    .WriteTo.Console()
+            //    .CreateLogger();
+
+            
+
+
             var isWorker = (args.Length >= 2 && args[1].ToLower() == "worker");
             var workerId = (isWorker && args.Length >= 3) ? args[2] : null;
 
@@ -89,7 +99,7 @@ namespace DurableTask.ConsoleTester
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Unexpected error starting orchestration: {ex.ToString()}");
+                Log.Logger.Error(ex, $"Unexpected error starting orchestration");
                 return;
             }
 
@@ -118,14 +128,14 @@ namespace DurableTask.ConsoleTester
                             default:
                                 {
                                     stop = true;
-                                    Console.WriteLine($"Unexpected status : {status.ToString()}");
+                                    Log.Logger.Error($"Unexpected status : {status.ToString()}");
                                     break;
                                 }
                         }
                     }
                     else
                     {
-                        Console.WriteLine($"Unexpected status == null");
+                        Log.Logger.Error($"Unexpected status == null");
                         stop = true;
                     }
 
@@ -134,7 +144,7 @@ namespace DurableTask.ConsoleTester
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error getting orchestration status: {ex.ToString()}");
+                    Log.Logger.Error($"Error getting orchestration status: {ex.ToString()}");
                 }
             }
 

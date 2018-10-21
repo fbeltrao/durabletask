@@ -400,7 +400,7 @@ namespace DurableTask.CosmosDB
         public Task<IQueueMessage> PeekMessageAsync()
         {
             // TODO: implement it
-            var qm = new CosmosDBQueueMessage();
+            var qm = new CosmosDBQueueMessageWrapper();
             return Task.FromResult<IQueueMessage>(qm);
             //throw new NotImplementedException();
         }

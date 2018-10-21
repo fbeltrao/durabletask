@@ -1,0 +1,76 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net45</TargetFrameworks>
+    <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ShippingScope>External</ShippingScope>
+    <SigningType>Product</SigningType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Enable auto assembly info generation, but disable specific attributes which are already defined in source.
+    -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
+    <GenerateAssemblyConfigurationAttribute>false</GenerateAssemblyConfigurationAttribute>
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
+    <GenerateAssemblyDescriptionAttribute>false</GenerateAssemblyDescriptionAttribute>
+
+    <RootNamespace>Microsoft.Azure.Documents.ChangeFeedProcessor</RootNamespace>
+    <AssemblyName>Microsoft.Azure.Documents.ChangeFeedProcessor</AssemblyName>
+
+    <PackageId>Microsoft.Azure.DocumentDB.ChangeFeedProcessor</PackageId>
+    <PackageVersion>2.0.6</PackageVersion>
+    <Title>Microsoft Azure Cosmos DB Change Feed Processor library</Title>
+    <Authors>Microsoft</Authors>
+    <PackageLicenseUrl>http://go.microsoft.com/fwlink/?LinkID=509837</PackageLicenseUrl>
+    <PackageProjectUrl>https://github.com/azure/azure-documentdb-changefeedprocessor-dotnet</PackageProjectUrl>
+    <PackageIconUrl>http://go.microsoft.com/fwlink/?LinkID=288890</PackageIconUrl>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageDescription>This library provides a host for distributing change feed events in partitioned collection across multiple observers. Instances of the host can scale up (by adding) or down (by removing) dynamically, and the load will be automatically distributed among active instances in about-equal way.</PackageDescription>
+    <Description>This library provides a host for distributing change feed events in partitioned collection across multiple observers. Instances of the host can scale up (by adding) or down (by removing) dynamically, and the load will be automatically distributed among active instances in about-equal way.</Description>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <PackageTags>microsoft azure cosmosdb documentdb docdb nosql azureofficial</PackageTags>
+    <RepositoryUrl>https://github.com/Azure/azure-documentdb-changefeedprocessor-dotnet</RepositoryUrl>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard2.0|AnyCPU'">
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <!--CS1587:XML comment is not placed on a valid language element 
+    LibLog files have misplaced comments, but we cannot touch them.-->
+    <NoWarn>1587</NoWarn>
+    <Version>2.0.6</Version>
+    <AssemblyVersion>2.0.6.0</AssemblyVersion>
+    <FileVersion>2.0.6.0</FileVersion>
+    <PackageReleaseNotes>The change log for this project is available at https://docs.microsoft.com/azure/cosmos-db/sql-api-sdk-dotnet-changefeed.
+</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="stylecop.json" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.DocumentDB" Version="1.22.0" />
+    <PackageReference Include="Microsoft.CSharp" Version="4.5.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="StyleCop.Analyzers" Version="1.1.0-beta004" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="Microsoft.Azure.DocumentDB.Core" Version="1.9.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net45'">
+    <PackageReference Include="Microsoft.Azure.DocumentDB" Version="1.21.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
+</Project>

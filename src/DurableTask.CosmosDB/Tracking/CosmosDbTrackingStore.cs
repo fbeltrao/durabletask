@@ -72,6 +72,8 @@ namespace DurableTask.CosmosDB.Tracking
 
         public override async Task CreateAsync()
         {
+            var isLocalCosmosDB = documentClient.ServiceEndpoint.DnsSafeHost.Equals("localhost", StringComparison.InvariantCultureIgnoreCase);
+
             var instanceCollection = new DocumentCollection()
             {
                 Id = this.instancesCollectionName,
@@ -118,7 +120,7 @@ namespace DurableTask.CosmosDB.Tracking
             await documentClient.CreateDocumentCollectionIfNotExistsAsync(
                 UriFactory.CreateDatabaseUri(DatabaseName),
                 historyCollection,
-                new RequestOptions { OfferThroughput = 10000 });
+                isLocalCosmosDB ? null : new RequestOptions { OfferThroughput = 10000 });
 
         }
 

@@ -14,5 +14,10 @@
         /// 
         /// </summary>
         public bool UseOneCollectionPerQueueType { get; internal set; }
+
+        /// <summary>
+        /// Worked Identifier
+        /// </summary>
+        public string WorkerId { get; internal set; }
     }
 }

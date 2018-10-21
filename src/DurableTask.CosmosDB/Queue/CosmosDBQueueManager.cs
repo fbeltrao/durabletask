@@ -25,6 +25,7 @@ namespace DurableTask.CosmosDB.Queue
         ConcurrentDictionary<string, IQueue> allControlQueues;
         ConcurrentDictionary<string, IQueue> ownedControlQueues;
         IQueue workItemQueue;
+        private CosmosDBQueueWrapper controlQueue;
 
         /// <summary>
         /// Constructor
@@ -41,23 +42,25 @@ namespace DurableTask.CosmosDB.Queue
             var workItemQueueName = $"{this.settings.TaskHubName.ToLowerInvariant()}-workitems";
             this.workItemQueue = GetQueue(workItemQueueName, isControlQueue: false);
 
-            for (int i = 0; i < this.settings.PartitionCount; i++)
-            {
-                var queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i), isControlQueue: true);
-                this.allControlQueues.TryAdd(queue.Name, queue);
-            }
+            // A single queue can handle the control queue (partition key)
+            this.controlQueue = GetQueue($"{this.settings.TaskHubName.ToLowerInvariant()}-control", isControlQueue: true);
+            this.allControlQueues.TryAdd(controlQueue.Name, controlQueue);
+            this.ownedControlQueues.TryAdd(controlQueue.Name, controlQueue);
         }
 
-        CosmosDBQueue GetQueue(string name, bool isControlQueue)
+        CosmosDBQueueWrapper GetQueue(string name, bool isControlQueue)
         {
             if (isControlQueue)
-                return (CosmosDBQueue)this.allControlQueues.GetOrAdd(name, (queueName) => CreateQueue(queueName, isControlQueue));
+            {
+                return (CosmosDBQueueWrapper)
+                    (this.controlQueue ?? (this.controlQueue = CreateQueue(name, isControlQueue)));
+            }
 
-            return (CosmosDBQueue)
+            return (CosmosDBQueueWrapper)
                 (this.workItemQueue ?? (this.workItemQueue = CreateQueue(name, isControlQueue)));
         }
 
-        private CosmosDBQueue CreateQueue(string queueName, bool isControlQueue)
+        private CosmosDBQueueWrapper CreateQueue(string queueName, bool isControlQueue)
         {
             var queueSettings = new CosmosDBQueueSettings
             {
@@ -69,7 +72,8 @@ namespace DurableTask.CosmosDB.Queue
                     SecretKey = this.settings.CosmosDBAuthKey,
                     Throughput = this.settings.CosmosDBQueueCollectionThroughput,
                 },
-                UseOneCollectionPerQueueType = true
+                UseOneCollectionPerQueueType = true,
+                WorkerId = this.settings.WorkerId,
             };
 
             // Exclude all
@@ -83,16 +87,14 @@ namespace DurableTask.CosmosDB.Queue
 
             var includedIndexes = new List<IncludedPath>()
             {
-                // NextAvailableTime will be part of "where" and "order by" in queries
+                // PartitionKey
                 new IncludedPath()
                 {
-                    Path = $"/{nameof(CosmosDBQueueMessage.NextAvailableTime)}/?",
-                    Indexes = new System.Collections.ObjectModel.Collection<Index>
-                    (
+                    Path = $"/{nameof(CosmosDBQueueMessageWrapper.PartitionKey)}/?",
+                    Indexes = new System.Collections.ObjectModel.Collection<Index>(
                         new Index[]
                         {
-                            new HashIndex(DataType.String, -1),
-                            new RangeIndex(DataType.Number, -1),
+                            new HashIndex(DataType.String, -1)
                         }
                     )
                 }
@@ -100,46 +102,13 @@ namespace DurableTask.CosmosDB.Queue
 
             queueSettings.QueueCollectionDefinition.IndexIncludedPaths = includedIndexes;
 
-            if (!this.settings.CosmosDBQueueUsePartition)
+            // Set the queue name as the partition key
+            queueSettings.QueueCollectionDefinition.PartitionKeyPaths = new System.Collections.ObjectModel.Collection<string>
             {
-                // QueueName will be part of "where" in queries
-                includedIndexes.Add(new IncludedPath()
-                {
-                    Path = $"/{nameof(CosmosDBQueueMessage.QueueName)}/?",
-                    Indexes = new System.Collections.ObjectModel.Collection<Index>(
-                        new Index[]
-                        {
-                            new HashIndex(DataType.String, -1)
-                        }
-                    )
-                });
-            }
+                string.Concat("/", nameof(CosmosDBQueueMessageWrapper.PartitionKey))
+            };
 
-
-            if (this.settings.CosmosDBQueueUsePartition)
-            {
-                // Set the queue name as the partition key
-                queueSettings.QueueCollectionDefinition.PartitionKeyPaths = new System.Collections.ObjectModel.Collection<string>
-                {
-                    string.Concat("/", nameof(CosmosDBQueueMessage.PartitionKey))
-                };
-
-                // Add the PartitionKey to the index
-                includedIndexes.Add(
-                    new IncludedPath()
-                    {
-                        Path = $"/{nameof(CosmosDBQueueMessage.PartitionKey)}/?",
-                        Indexes = new System.Collections.ObjectModel.Collection<Index>
-                        (
-                            new Index[]
-                            {
-                                new HashIndex(DataType.String, -1)
-                            }
-                        )
-                    });
-            }
-
-            var queue = new CosmosDBQueue(queueSettings, queueName, isControlQueue);
+            var queue = new CosmosDBQueueWrapper(queueSettings, queueName, isControlQueue);
             return queue;
         }
 
@@ -157,43 +126,22 @@ namespace DurableTask.CosmosDB.Queue
 
 
         Monitoring.TelemetryRecorder MonitorDependency(string dependencyType) => new Monitoring.TelemetryRecorder(TelemetryClientProvider.TelemetryClient, dependencyType);
-
-        int workItemQueueWriteIndex = -1;
-        int workItemQueueReadIndex = -1;
-
+        
         /// <inheritdoc />
         public async Task EnqueueMessageAsync(IQueue queue, ReceivedMessageContext context, TaskMessage taskMessage, TimeSpan? initialVisibilityDelay, QueueRequestOptions requestOptions)
         {
             using (var recorded = MonitorDependency(nameof(EnqueueMessageAsync)))
             {
-                var cosmosQueue = (CosmosDBQueue)queue;
+                var cosmosQueue = (CosmosDBQueueWrapper)queue;
 
                 Guid outboundTraceActivityId = Guid.NewGuid();
                 var data = new MessageData(taskMessage, outboundTraceActivityId, queue.Name);
-                var msg = new CosmosDBQueueMessage
-                {
-                    Data = data,
-                };
+                var msg = new CosmosDBQueueMessageWrapper().SetDataContent(data);
 
-
-                if (!object.ReferenceEquals(cosmosQueue, this.workItemQueue))
-                {
-                    msg.PartitionKey = queue.Name;
-                }
+                if (cosmosQueue.isControlQueue)
+                    msg.PartitionKey = taskMessage.OrchestrationInstance.InstanceId;
                 else
-                {
-                    var indexToUse = this.workItemQueueWriteIndex;
-                    lock (this)
-                    {
-                        indexToUse++;
-                        if (indexToUse >= this.settings.PartitionCount)
-                            indexToUse = 0;
-
-                        this.workItemQueueWriteIndex = indexToUse;
-                    }
-
-                    msg.PartitionKey = GetWorkItemQueuePartitionKey(indexToUse);
-                }
+                    msg.PartitionKey = Guid.NewGuid().ToString();
 
                 if (initialVisibilityDelay.HasValue)
                 {
@@ -212,40 +160,19 @@ namespace DurableTask.CosmosDB.Queue
         {
             using (var recorded = MonitorDependency(nameof(AddMessageAsync)))
             {
-                var cosmosQueue = (CosmosDBQueue)queue;
+                var cosmosQueue = (CosmosDBQueueWrapper)queue;
 
                 // We transfer to a new trace activity ID every time a new outbound queue message is created.
                 Guid outboundTraceActivityId = Guid.NewGuid();
 
                 var data = new MessageData(message, outboundTraceActivityId, queue.Name);
 
-                var msg = new CosmosDBQueueMessage
-                {
-                    Data = data,
-                };
+                var msg = new CosmosDBQueueMessageWrapper().SetDataContent(data);
 
-
-                if (!object.ReferenceEquals(cosmosQueue, this.workItemQueue))
-                {
-                    msg.PartitionKey = queue.Name;
-                }
+                if (cosmosQueue.isControlQueue)
+                    msg.PartitionKey = message.OrchestrationInstance.InstanceId;
                 else
-                {
-
-                    var indexToUse = this.workItemQueueWriteIndex;
-                    lock (this)
-                    {
-                        indexToUse++;
-                        if (indexToUse >= this.settings.PartitionCount)
-                            indexToUse = 0;
-
-                        this.workItemQueueWriteIndex = indexToUse;
-                    }
-
-
-                    var partitionKey = GetWorkItemQueuePartitionKey(indexToUse);
-                    msg.PartitionKey = partitionKey;
-                }
+                    msg.PartitionKey = Guid.NewGuid().ToString();
 
                 if (timeToLive.HasValue)
                 {
@@ -262,8 +189,6 @@ namespace DurableTask.CosmosDB.Queue
                 recorded.AsSucceeded();
             }
         }
-
-        string GetWorkItemQueuePartitionKey(int index) => $"{settings.TaskHubName}-workitem-{index}";
 
         /// <inheritdoc />
         public async Task DeleteAsync()
@@ -289,89 +214,41 @@ namespace DurableTask.CosmosDB.Queue
         /// <inheritdoc />
         public Task<IQueue[]> GetControlQueuesAsync(int partitionCount)
         {
-
-            var controlQueues = new IQueue[partitionCount];
-
-            for (int i = 0; i < this.settings.PartitionCount; i++)
-            {
-                var queue = GetQueue(Utils.GetControlQueueId(this.settings.TaskHubName, i), isControlQueue: true);
-                controlQueues[i] = queue;
-            }
-
-            return Task.FromResult(controlQueues);
+            return Task.FromResult(new IQueue[] { this.controlQueue });
         }
 
 
-        int batchWorkItemSize = 1;
-        System.Collections.Concurrent.ConcurrentQueue<CosmosDBQueueMessage> availableWorkItemMessages = new ConcurrentQueue<CosmosDBQueueMessage>();
+        System.Collections.Concurrent.ConcurrentQueue<CosmosDBQueueMessageWrapper> availableWorkItemMessages = new ConcurrentQueue<CosmosDBQueueMessageWrapper>();
 
         /// <inheritdoc />
         public async Task<ReceivedMessageContext> GetMessageAsync(IQueue queue, TimeSpan queueVisibilityTimeout, QueueRequestOptions requestOptions, OperationContext operationContext, CancellationToken cancellationToken)
         {
             using (var recorded = MonitorDependency(nameof(GetMessageAsync)))
             {
-                CosmosDBQueueMessage queueMessage = null;
-                if (batchWorkItemSize > 1)
-                {
-                    availableWorkItemMessages.TryDequeue(out queueMessage);
-                }
+                availableWorkItemMessages.TryDequeue(out var queueMessage);                
 
                 if (queueMessage == null)
                 {
 
-                    var wq = (CosmosDBQueue)queue;
-                    if (batchWorkItemSize > 1)
-                    {
-                        var queueMessages = ((IEnumerable<CosmosDBQueueMessage>)await wq.GetMessagesAsync(
-                            batchWorkItemSize,
-                            queueVisibilityTimeout,
-                            requestOptions,
-                            operationContext,
-                            cancellationToken));
+                    var wq = (CosmosDBQueueWrapper)queue;
+                    var queueMessages = ((IEnumerable<CosmosDBQueueMessageWrapper>)await wq.GetMessagesAsync(
+                        1,
+                        queueVisibilityTimeout,
+                        requestOptions,
+                        operationContext,
+                        cancellationToken));
 
-                        if (queueMessages != null)
+                    if (queueMessages != null)
+                    {
+                        queueMessage = queueMessages.FirstOrDefault();
+                        if (queueMessages.Count() > 1)
                         {
-                            foreach (var qm in queueMessages)
+                            foreach (var qm in queueMessages.Skip(1))
                             {
                                 availableWorkItemMessages.Enqueue(qm);
-                            }
-
-                            availableWorkItemMessages.TryDequeue(out queueMessage);
+                            }                           
                         }
-                    }
-                    else
-                    {
-                        if (object.ReferenceEquals(wq, this.workItemQueue))
-                        {
-                            for (int i = 0; i < this.settings.PartitionCount; ++i)
-                            {
-                                this.workItemQueueReadIndex++;
-                                if (this.workItemQueueReadIndex >= this.settings.PartitionCount)
-                                    this.workItemQueueReadIndex = 0;
-
-                                var partitionKey = GetWorkItemQueuePartitionKey(workItemQueueReadIndex);
-
-                                queueMessage = ((CosmosDBQueueMessage)await wq.GetMessageInPartitionAsync(
-                                    partitionKey,
-                                    queueVisibilityTimeout,
-                                    requestOptions,
-                                    operationContext,
-                                    cancellationToken));
-
-                                if (queueMessage != null)
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            queueMessage = ((CosmosDBQueueMessage)await wq.GetMessageAsync(
-                                queueVisibilityTimeout,
-                                requestOptions,
-                                operationContext,
-                                cancellationToken));
-                        }
-                    }
-
+                    }                    
 
                     this.stats.CosmosDBRequests.Increment();
                 }
@@ -380,7 +257,7 @@ namespace DurableTask.CosmosDB.Queue
 
                 if (queueMessage != null)
                 {
-                    if (queueMessage.Data is MessageData messageData)
+                    if (queueMessage.Contents.Data is MessageData messageData)
                     {
                         return ReceivedMessageContext.CreateFromReceivedMessage(messageData, this.StorageName, settings.TaskHubName, queueMessage.Id, queue.Name);
                     }
@@ -395,31 +272,15 @@ namespace DurableTask.CosmosDB.Queue
         {
             using (var recorded = MonitorDependency(nameof(GetMessagesAsync)))
             {
-                var messages = new List<MessageData>();
-
-                await this.ownedControlQueues.Values.ParallelForEachAsync(
-                    async delegate (IQueue controlQueue)
-                    {
-                        var batch = await controlQueue.GetMessagesAsync(
-                            this.settings.ControlQueueBatchSize,
+                var rawMessages = await this.controlQueue.GetMessagesAsync(
+                    this.settings.ControlQueueBatchSize,
                             this.settings.ControlQueueVisibilityTimeout,
                             ((StorageOrchestrationServiceSettings)this.settings).ControlQueueRequestOptions,
                             null /* operationContext */,
                             cancellationToken);
 
-                        this.stats.CosmosDBRequests.Increment();
-
-
-                        if (batch != null)
-                        {
-                            var incomingMessages = batch.Select(x => (MessageData)((CosmosDBQueueMessage)x).Data);
-
-                            lock (messages)
-                            {
-                                messages.AddRange(incomingMessages);
-                            }
-                        }
-                    });
+                this.stats.CosmosDBRequests.Increment();
+                var messages = rawMessages.Select(x => (MessageData)(((CosmosDBQueueMessageWrapper)x).GetDataContent())).ToList();
 
                 recorded.AsSucceeded();
 

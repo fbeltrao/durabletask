@@ -195,11 +195,11 @@ namespace DurableTask.AzureStorage
         {
             if (this.messageData != null)
             {
-                return this.messageData.OriginalQueueMessage.NextVisibleTime.Value.UtcDateTime;
+                return this.messageData.OriginalQueueMessage.NextVisibleTime?.UtcDateTime ?? DateTime.UtcNow;
             }
             else
             {
-                return this.messageDataBatch.Min(msg => msg.OriginalQueueMessage.NextVisibleTime.Value.UtcDateTime);
+                return this.messageDataBatch.Min(msg => msg.OriginalQueueMessage.NextVisibleTime?.UtcDateTime ?? DateTime.UtcNow);
             }
         }
 
