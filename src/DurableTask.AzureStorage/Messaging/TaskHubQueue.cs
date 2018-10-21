@@ -120,6 +120,17 @@ namespace DurableTask.AzureStorage.Messaging
                     initialVisibilityDelay = TimeSpan.Zero;
                 }
             }
+            else if (taskMessage.Event is ExecutionStartedEvent executionStartedEvent)
+            {
+                if (executionStartedEvent.ScheduledStartTime.HasValue)
+                {
+                    initialVisibilityDelay = executionStartedEvent.ScheduledStartTime.Value.Subtract(DateTime.UtcNow);
+                    if (initialVisibilityDelay < TimeSpan.Zero)
+                    {
+                        initialVisibilityDelay = TimeSpan.Zero;
+                    }
+                }
+            }
 
             return initialVisibilityDelay;
         }

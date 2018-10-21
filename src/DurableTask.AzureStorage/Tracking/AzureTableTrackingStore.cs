@@ -472,6 +472,7 @@ namespace DurableTask.AzureStorage.Tracking
             orchestrationState.Status = orchestrationInstanceStatus.CustomStatus;
             orchestrationState.CreatedTime = orchestrationInstanceStatus.CreatedTime;
             orchestrationState.LastUpdatedTime = orchestrationInstanceStatus.LastUpdatedTime;
+            orchestrationState.ScheduledStartTime = orchestrationInstanceStatus.ScheduledStartTime;
 
             string[] results = await Task.WhenAll(
                 this.GetOrchestrationInputAsync(orchestrationInstanceStatus),
@@ -541,6 +542,7 @@ namespace DurableTask.AzureStorage.Tracking
                     ["Version"] = new EntityProperty(executionStartedEvent.Version),
                     ["RuntimeStatus"] = new EntityProperty(OrchestrationStatus.Pending.ToString()),
                     ["LastUpdatedTime"] = new EntityProperty(DateTime.UtcNow),
+                    ["ScheduledStartTime"] = new EntityProperty(executionStartedEvent.ScheduledStartTime)
                 }
             };
 
@@ -658,6 +660,8 @@ namespace DurableTask.AzureStorage.Tracking
                         orchestrationInstanceUpdate.Properties["Version"] = new EntityProperty(executionStartedEvent.Version);
                         orchestrationInstanceUpdate.Properties["CreatedTime"] = new EntityProperty(executionStartedEvent.Timestamp);
                         orchestrationInstanceUpdate.Properties["RuntimeStatus"] = new EntityProperty(OrchestrationStatus.Running.ToString());
+                        if (executionStartedEvent.ScheduledStartTime.HasValue)
+                            orchestrationInstanceUpdate.Properties["ScheduledStartTime"] = new EntityProperty(executionStartedEvent.ScheduledStartTime);
                         this.SetTablePropertyForMessage(entity, orchestrationInstanceUpdate, InputProperty, InputProperty, executionStartedEvent.Input);
                         break;
                     case EventType.ExecutionCompleted:
