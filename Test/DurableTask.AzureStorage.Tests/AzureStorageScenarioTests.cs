@@ -1743,7 +1743,7 @@ namespace DurableTask.AzureStorage.Tests
             {
                 public override async Task<DateTime> RunTask(OrchestrationContext context, string input)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(3));
+                    await context.CreateTimer<bool>(context.CurrentUtcDateTime.Add(TimeSpan.FromSeconds(3)), true);
                     return context.CurrentUtcDateTime;
                 }
             }
