@@ -33,11 +33,22 @@ namespace DurableTask.Core.History
     [KnownType(typeof(TimerFiredEvent))]
     [KnownType(typeof(OrchestratorStartedEvent))]
     [KnownType(typeof(OrchestratorCompletedEvent))]
+    [KnownType(typeof(EventSentEvent))]
     [KnownType(typeof(EventRaisedEvent))]
     [KnownType(typeof(ContinueAsNewEvent))]
     [KnownType(typeof(HistoryStateEvent))]
     public abstract class HistoryEvent : IExtensibleDataObject
     {
+
+        /// <summary>
+        /// Creates a new history event
+        /// </summary>
+        internal HistoryEvent()
+        {
+            IsPlayed = false;
+            Timestamp = DateTime.UtcNow;
+        }
+
         /// <summary>
         /// Creates a new history event with the supplied event id
         /// </summary>
@@ -53,7 +64,7 @@ namespace DurableTask.Core.History
         /// Gets the event id
         /// </summary>
         [DataMember]
-        public int EventId { get; private set; }
+        public int EventId { get; internal set; }
 
         /// <summary>
         /// Gets the IsPlayed status

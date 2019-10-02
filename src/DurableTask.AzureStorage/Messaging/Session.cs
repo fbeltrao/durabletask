@@ -36,7 +36,7 @@ namespace DurableTask.AzureStorage.Messaging
             };
         }
 
-        public OrchestrationInstance Instance { get; }
+        public OrchestrationInstance Instance { get; protected set; }
 
         public OperationContext StorageOperationContext { get; }
 
@@ -65,13 +65,17 @@ namespace DurableTask.AzureStorage.Messaging
                 this.storageAccountName,
                 this.taskHubName,
                 taskMessage.Event.EventType.ToString(),
+                Utils.GetTaskEventId(taskMessage.Event),
                 taskMessage.OrchestrationInstance.InstanceId,
                 taskMessage.OrchestrationInstance.ExecutionId,
                 queueMessage.Id,
                 Math.Max(0, (int)DateTimeOffset.UtcNow.Subtract(queueMessage.InsertionTime.Value).TotalMilliseconds),
                 data.SequenceNumber,
+                data.Episode,
                 isExtendedSession,
                 Utils.ExtensionVersion);
         }
+
+        public abstract int GetCurrentEpisode();
     }
 }

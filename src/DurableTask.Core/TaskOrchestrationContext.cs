@@ -35,6 +35,13 @@ namespace DurableTask.Core
         bool executionTerminated;
         int idCounter;
 
+        public bool HasContinueAsNew => continueAsNew != null;
+
+        public void AddEventToNextIteration(HistoryEvent he)
+        {
+            continueAsNew.CarryoverEvents.Add(he);
+        }
+
         public TaskOrchestrationContext(OrchestrationInstance orchestrationInstance, TaskScheduler taskScheduler)
         {
             Utils.UnusedParameter(taskScheduler);
@@ -54,6 +61,7 @@ namespace DurableTask.Core
         internal void ClearPendingActions()
         {
             this.orchestratorActionsMap.Clear();
+            continueAsNew = null;
         }
 
         public override async Task<TResult> ScheduleTask<TResult>(string name, string version,
@@ -151,12 +159,41 @@ namespace DurableTask.Core
 
             this.orchestratorActionsMap.Add(id, action);
 
-            var tcs = new TaskCompletionSource<string>();
-            this.openTasks.Add(id, new OpenTaskInfo { Name = name, Version = version, Result = tcs });
+            if (OrchestrationTags.IsTaggedAsFireAndForget(tags))
+            {
+                // this is a fire-and-forget orchestration, so we do not wait for a result.
+                return default(T);
+            }
+            else
+            {
+                var tcs = new TaskCompletionSource<string>();
+                this.openTasks.Add(id, new OpenTaskInfo { Name = name, Version = version, Result = tcs });
 
-            string serializedResult = await tcs.Task;
+                string serializedResult = await tcs.Task;
 
-            return this.dataConverter.Deserialize<T>(serializedResult);
+                return this.dataConverter.Deserialize<T>(serializedResult);
+            }
+        }
+
+        public override void SendEvent(OrchestrationInstance orchestrationInstance, string eventName, object eventData)
+        {
+            if (string.IsNullOrWhiteSpace(orchestrationInstance?.InstanceId))
+            {
+                throw new ArgumentException(nameof(orchestrationInstance));
+            }
+
+            int id = this.idCounter++;
+            string serializedEventData = this.dataConverter.Serialize(eventData);
+
+            var action = new SendEventOrchestratorAction
+            {
+                Id = id,
+                Instance = orchestrationInstance,
+                EventName = eventName,
+                EventData = serializedEventData,
+            };
+
+            this.orchestratorActionsMap.Add(id, action);
         }
 
         public override void ContinueAsNew(object input)
@@ -269,6 +306,21 @@ namespace DurableTask.Core
                         subOrchestrationCreateEvent.InstanceId));
             }
         }
+
+        public void HandleEventSentEvent(EventSentEvent eventSentEvent)
+        {
+            int taskId = eventSentEvent.EventId;
+            if (this.orchestratorActionsMap.ContainsKey(taskId))
+            {
+                this.orchestratorActionsMap.Remove(taskId);
+            }
+            else
+            {
+                throw new NonDeterministicOrchestrationException(eventSentEvent.EventId,
+                    $"EventSentEvent: {eventSentEvent.EventId} {eventSentEvent.EventType} {eventSentEvent.Name} {eventSentEvent.InstanceId}");
+            }
+        }
+
 
         public void HandleTaskCompletedEvent(TaskCompletedEvent completedEvent)
         {

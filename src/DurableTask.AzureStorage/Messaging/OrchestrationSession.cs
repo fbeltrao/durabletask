@@ -18,6 +18,7 @@ namespace DurableTask.AzureStorage.Messaging
     using System.Linq;
     using System.Threading.Tasks;
     using DurableTask.Core;
+    using DurableTask.Core.History;
 
     sealed class OrchestrationSession : SessionBase, IOrchestrationSession
     {
@@ -31,7 +32,8 @@ namespace DurableTask.AzureStorage.Messaging
             string storageAccountName,
             string taskHubName,
             OrchestrationInstance orchestrationInstance,
-            IReadOnlyList<MessageData> initialMessageBatch,
+            ControlQueue controlQueue,
+            IList<MessageData> initialMessageBatch,
             OrchestrationRuntimeState runtimeState,
             string eTag,
             TimeSpan idleTimeout,
@@ -39,6 +41,7 @@ namespace DurableTask.AzureStorage.Messaging
             : base(storageAccountName, taskHubName, orchestrationInstance, traceActivityId)
         {
             this.idleTimeout = idleTimeout;
+            this.ControlQueue = controlQueue ?? throw new ArgumentNullException(nameof(controlQueue));
             this.CurrentMessageBatch = initialMessageBatch ?? throw new ArgumentNullException(nameof(initialMessageBatch));
             this.RuntimeState = runtimeState ?? throw new ArgumentNullException(nameof(runtimeState));
             this.ETag = eTag;
@@ -48,13 +51,21 @@ namespace DurableTask.AzureStorage.Messaging
             this.nextMessageBatch = new MessageCollection();
         }
 
-        public IReadOnlyList<MessageData> CurrentMessageBatch { get; private set; }
+        public ControlQueue ControlQueue { get; }
 
-        public OrchestrationRuntimeState RuntimeState { get; }
+        public IList<MessageData> CurrentMessageBatch { get; private set; }
+
+        public OrchestrationRuntimeState RuntimeState { get; private set; }
 
         public string ETag { get; set; }
 
         public IReadOnlyList<MessageData> PendingMessages => this.nextMessageBatch;
+
+        public override int GetCurrentEpisode()
+        {
+            // RuntimeState is mutable, so we cannot cache the current episode number.
+            return Utils.GetEpisodeNumber(this.RuntimeState);
+        }
 
         public IEnumerable<MessageData> AddOrReplaceMessages(IEnumerable<MessageData> messages)
         {
@@ -104,6 +115,50 @@ namespace DurableTask.AzureStorage.Messaging
             }
 
             return messages;
+        }
+
+        public void UpdateRuntimeState(OrchestrationRuntimeState runtimeState)
+        {
+            this.RuntimeState = runtimeState;
+            this.Instance = runtimeState.OrchestrationInstance;
+        }
+
+        internal bool IsOutOfOrderMessage(MessageData message)
+        {
+            if (this.IsNonexistantInstance() && message.OriginalQueueMessage.DequeueCount > 5)
+            {
+                // The first five times a message for a nonexistant instance is dequeued, give the message the benefit
+                // of the doubt and assume that the instance hasn't had its history table populated yet. After the 
+                // fifth execution, ~30 seconds have passed and the most likely scenario is that this is a zombie event. 
+                // This means the history table for the message's orchestration no longer exists, either due to an explicit 
+                // PurgeHistory request or due to a ContinueAsNew call cleaning the old execution's history.
+                return false;
+            }
+
+            int taskScheduledId = Utils.GetTaskEventId(message.TaskMessage.Event);
+            if (taskScheduledId < 0)
+            {
+                // This message does not require ordering (RaiseEvent, ExecutionStarted, Terminate, etc.).
+                return false;
+            }
+
+            // This message is a response to a task. Search the history to make sure that we've recorded the fact that
+            // this task was scheduled. We don't have the luxery of transactions between queues and tables, so queue
+            // messages are always written before we update the history in table storage. This means that in some
+            // cases the response message could get picked up before we're ready for it.
+            HistoryEvent mostRecentTaskEvent = this.RuntimeState.Events.LastOrDefault(e => e.EventId == taskScheduledId);
+            if (mostRecentTaskEvent != null)
+            {
+                return false;
+            }
+
+            // The message is out of order and cannot be handled by the current session.
+            return true;
+        }
+
+        bool IsNonexistantInstance()
+        {
+            return this.RuntimeState.Events.Count == 0 || this.RuntimeState.ExecutionStartedEvent == null;
         }
     }
 }

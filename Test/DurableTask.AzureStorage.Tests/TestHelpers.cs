@@ -20,22 +20,21 @@ namespace DurableTask.AzureStorage.Tests
     {
         public static TestOrchestrationHost GetTestOrchestrationHost(
             bool enableExtendedSessions,
-            int extendedSessionTimeoutInSeconds = 30)
+            int extendedSessionTimeoutInSeconds = 30,
+            bool fetchLargeMessages = true)
         {
             string storageConnectionString = GetTestStorageAccountConnectionString();
 
-            var service = new AzureStorageOrchestrationService(
-                new AzureStorageOrchestrationServiceSettings
-                {
-                    StorageConnectionString = storageConnectionString,
-                    TaskHubName = ConfigurationManager.AppSettings.Get("TaskHubName"),
-                    ExtendedSessionsEnabled = enableExtendedSessions,
-                    ExtendedSessionIdleTimeout = TimeSpan.FromSeconds(extendedSessionTimeoutInSeconds),
-                });
+            var settings = new AzureStorageOrchestrationServiceSettings
+            {
+                StorageConnectionString = storageConnectionString,
+                TaskHubName = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None).AppSettings.Settings["TaskHubName"].Value,
+                ExtendedSessionsEnabled = enableExtendedSessions,
+                ExtendedSessionIdleTimeout = TimeSpan.FromSeconds(extendedSessionTimeoutInSeconds),
+                FetchLargeMessageDataEnabled = fetchLargeMessages,
+            };
 
-            service.CreateAsync().GetAwaiter().GetResult();
-
-            return new TestOrchestrationHost(service);
+            return new TestOrchestrationHost(settings);
         }
 
         public static string GetTestStorageAccountConnectionString()
@@ -54,7 +53,7 @@ namespace DurableTask.AzureStorage.Tests
             string value = Environment.GetEnvironmentVariable("DurableTaskTest" + name);
             if (string.IsNullOrEmpty(value))
             {
-                value = ConfigurationManager.AppSettings.Get(name);
+                value = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None).AppSettings.Settings[name].Value;
             }
 
             return value;
