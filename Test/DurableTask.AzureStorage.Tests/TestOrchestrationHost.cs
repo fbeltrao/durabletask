@@ -22,18 +22,26 @@ namespace DurableTask.AzureStorage.Tests
 
     internal sealed class TestOrchestrationHost : IDisposable
     {
+        readonly AzureStorageOrchestrationServiceSettings settings;
         readonly TaskHubWorker worker;
         readonly TaskHubClient client;
         readonly HashSet<Type> addedOrchestrationTypes;
         readonly HashSet<Type> addedActivityTypes;
 
-        public TestOrchestrationHost(AzureStorageOrchestrationService service)
+        public TestOrchestrationHost(AzureStorageOrchestrationServiceSettings settings)
         {
+            var service = new AzureStorageOrchestrationService(settings);
+            service.CreateAsync().GetAwaiter().GetResult();
+
+            this.settings = settings;
+
             this.worker = new TaskHubWorker(service);
             this.client = new TaskHubClient(service);
             this.addedOrchestrationTypes = new HashSet<Type>();
             this.addedActivityTypes = new HashSet<Type>();
         }
+
+        public string TaskHub => this.settings.TaskHubName;
 
         public void Dispose()
         {
@@ -48,6 +56,12 @@ namespace DurableTask.AzureStorage.Tests
         public Task StopAsync()
         {
             return this.worker.StopAsync(isForced: true);
+        }
+
+        public void AddAutoStartOrchestrator(Type type)
+        {
+            this.worker.AddTaskOrchestrations(new AutoStartOrchestrationCreator(type));
+            this.addedOrchestrationTypes.Add(type);
         }
 
         public async Task<TestOrchestrationClient> StartOrchestrationAsync(

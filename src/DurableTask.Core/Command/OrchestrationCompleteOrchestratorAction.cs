@@ -13,8 +13,16 @@
 
 namespace DurableTask.Core.Command
 {
+    using System.Collections.Generic;
+    using DurableTask.Core.History;
+
     internal class OrchestrationCompleteOrchestratorAction : OrchestratorAction
     {
+        public OrchestrationCompleteOrchestratorAction()
+        {
+            CarryoverEvents = new List<HistoryEvent>();
+        }
+
         public OrchestrationStatus OrchestrationStatus;
 
         public override OrchestratorActionType OrchestratorActionType => OrchestratorActionType.OrchestrationComplete;
@@ -24,5 +32,7 @@ namespace DurableTask.Core.Command
         public string Details { get; set; }
 
         public string NewVersion { get; set; }
+
+        public IList<HistoryEvent> CarryoverEvents { get; }
     }
 }

@@ -14,6 +14,7 @@
 namespace DurableTask.AzureStorage
 {
     using System;
+    using DurableTask.Core;
     using Microsoft.WindowsAzure.Storage.Queue;
     using Microsoft.WindowsAzure.Storage.Table;
 
@@ -23,6 +24,8 @@ namespace DurableTask.AzureStorage
     public class AzureStorageOrchestrationServiceSettings
     {
         internal const int DefaultPartitionCount = 4;
+
+        internal static readonly TimeSpan DefaultMaxQueuePollingInterval = TimeSpan.FromSeconds(30);
 
         /// <summary>
         /// Gets or sets the number of messages to pull from the control queue at a time. The default is 32.
@@ -70,6 +73,13 @@ namespace DurableTask.AzureStorage
         public string StorageConnectionString { get; set; }
 
         /// <summary>
+        /// Gets or sets the prefix of the TrackingStore table name.
+        /// This property is only used when we have TrackingStoreStorageAccountDetails.
+        /// The default is "DurableTask"
+        /// </summary>
+        public string TrackingStoreNamePrefix { get; set; } = "DurableTask";
+
+        /// <summary>
         /// Gets or sets the name of the task hub. This value is used to group related storage resources.
         /// </summary>
         public string TaskHubName { get; set; }
@@ -93,6 +103,11 @@ namespace DurableTask.AzureStorage
         public int MaxStorageOperationConcurrency { get; set; } = Environment.ProcessorCount * 25;
 
         /// <summary>
+        /// Gets the maximum number of orchestrator actions to checkpoint at a time.
+        /// </summary>
+        public int MaxCheckpointBatchSize { get; set; }
+
+        /// <summary>
         /// Gets or sets the identifier for the current worker.
         /// </summary>
         public string WorkerId { get; set; } = Environment.MachineName;
@@ -106,6 +121,12 @@ namespace DurableTask.AzureStorage
         /// Gets or sets a flag indicating whether to enable extended sessions.
         /// </summary>
         public bool ExtendedSessionsEnabled { get; set; }
+
+        /// <summary>
+        /// Gets or sets a flag indicating whether to automatically fetch large orchestration input and outputs
+        /// when it is stored in a compressed blob when retrieving orchestration state.
+        /// </summary>
+        public bool FetchLargeMessageDataEnabled { get; set; } = true;
 
         /// <summary>
         /// Gets or sets the number of seconds before an idle session times out.
@@ -128,5 +149,36 @@ namespace DurableTask.AzureStorage
         /// interval, it will cause it to expire and ownership of the partition will move to another worker instance.
         /// </summary>
         public TimeSpan LeaseInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Maximum interval for polling control and work-item queues.
+        /// </summary>
+        public TimeSpan MaxQueuePollingInterval { get; set; } = DefaultMaxQueuePollingInterval;
+
+        /// <summary>
+        /// Gets or sets the Azure Storage Account details
+        /// If provided, this is used to connect to Azure Storage
+        /// </summary>
+        public StorageAccountDetails StorageAccountDetails { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Storage Account Details for Tracking Store.
+        /// In case of null, StorageAccountDetails is applied. 
+        /// </summary>
+        public StorageAccountDetails TrackingStoreStorageAccountDetails { get; set; }
+        
+        /// <summary>
+        ///  Should we carry over unexecuted raised events to the next iteration of an orchestration on ContinueAsNew
+        /// </summary>
+        public BehaviorOnContinueAsNew EventBehaviourForContinueAsNew { get; set; } = BehaviorOnContinueAsNew.Carryover;
+
+        /// <summary>
+        /// Returns bool indicating is the TrackingStoreStorageAccount has been set.
+        /// </summary>
+        public  bool HasTrackingStoreStorageAccount => TrackingStoreStorageAccountDetails != null;
+
+        internal string HistoryTableName => this.HasTrackingStoreStorageAccount ? $"{this.TrackingStoreNamePrefix}History" : $"{this.TaskHubName}History";
+
+        internal string InstanceTableName => this.HasTrackingStoreStorageAccount ? $"{this.TrackingStoreNamePrefix}Instances" : $"{this.TaskHubName}Instances";
     }
 }
