@@ -1792,7 +1792,6 @@ namespace DurableTask.AzureStorage.Tests
                 Assert.AreEqual("Current Time!", JToken.Parse(statusStartingIn30Seconds.Result?.Input));
                 Assert.AreEqual(expectedStartTime, statusStartingIn30Seconds.Result.ScheduledStartTime);
 
-
                 var startNowResult = (DateTime)JToken.Parse(statusStartingNow.Result?.Output);
                 var startIn30SecondsResult = (DateTime)JToken.Parse(statusStartingIn30Seconds.Result?.Output);
 

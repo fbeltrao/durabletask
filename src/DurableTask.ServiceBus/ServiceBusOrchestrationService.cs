@@ -555,7 +555,8 @@ namespace DurableTask.ServiceBus
                 CreatedTime = executionStartedEvent.Timestamp,
                 LastUpdatedTime = DateTime.UtcNow,
                 CompletedTime = DateTimeUtils.MinDateTime,
-                ParentInstance = executionStartedEvent.ParentInstance
+                ParentInstance = executionStartedEvent.ParentInstance,
+                ScheduledStartTime = executionStartedEvent.ScheduledStartTime
             };
 
             var orchestrationStateEntity = new OrchestrationStateInstanceEntity
@@ -1064,7 +1065,8 @@ namespace DurableTask.ServiceBus
                 Tags = executionStartedEvent?.Tags,
                 CreatedTime = createTime,
                 LastUpdatedTime = createTime,
-                CompletedTime = DateTimeUtils.MinDateTime
+                CompletedTime = DateTimeUtils.MinDateTime,
+                ScheduledStartTime = executionStartedEvent?.ScheduledStartTime
             };
 
             var jumpStartEntity = new OrchestrationJumpStartInstanceEntity
@@ -1121,6 +1123,11 @@ namespace DurableTask.ServiceBus
             if (message.Event is ExecutionStartedEvent executionStartedEvent)
             {
                 brokeredMessage.MessageId = $"{executionStartedEvent.OrchestrationInstance.InstanceId}_{executionStartedEvent.OrchestrationInstance.ExecutionId}";
+
+                // setting the enqueue time here as ServiceBusUtils.GetBrokeredMessageFromObjectAsync is not using the messageFireTime parameter
+                // in every scenario
+                if (executionStartedEvent.ScheduledStartTime.HasValue)
+                    brokeredMessage.ScheduledEnqueueTimeUtc = executionStartedEvent.ScheduledStartTime.Value.ToUniversalTime();
             }
 
             return brokeredMessage;
